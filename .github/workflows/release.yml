@@ -1,0 +1,52 @@
+name: Release
+
+on:
+  push:
+    tags: ["v*"]
+
+permissions:
+  contents: write
+
+env:
+  TWEEGO_VERSION: "2.1.1"
+  SUGARCUBE_VERSION: "2.36.1"
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.x"
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "20"
+
+      - name: Validate
+        run: |
+          python3 tools/validate.py
+          python3 tools/extract_js.py && node --check build/check.js
+
+      - name: Install Tweego and SugarCube
+        run: |
+          mkdir -p "$RUNNER_TEMP/tweego" && cd "$RUNNER_TEMP/tweego"
+          curl -fsSL -o tweego.zip "https://github.com/tmedwards/tweego/releases/download/v${TWEEGO_VERSION}/tweego-${TWEEGO_VERSION}-linux-x64.zip"
+          unzip -q tweego.zip
+          chmod +x tweego
+          # Replace Tweego's bundled SugarCube 2 with the pinned version.
+          rm -rf storyformats/sugarcube-2
+          curl -fsSL -o sugarcube.zip "https://github.com/tmedwards/sugarcube-2/releases/download/v${SUGARCUBE_VERSION}/sugarcube-${SUGARCUBE_VERSION}-for-twine-2.1-local.zip"
+          unzip -q sugarcube.zip -d storyformats
+          ./tweego --list-formats | grep "SugarCube (${SUGARCUBE_VERSION})"
+          echo "$RUNNER_TEMP/tweego" >> "$GITHUB_PATH"
+
+      - name: Build
+        run: make build
+
+      - name: Attach to release
+        uses: softprops/action-gh-release@v2
+        with:
+          files: dist/index.html
