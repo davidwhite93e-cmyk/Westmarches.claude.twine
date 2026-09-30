@@ -1,0 +1,2432 @@
+:: StoryTitle
+Tales of the Western Reach
+
+:: StoryData
+{
+  "ifid": "D6B3F7A2-4C1E-4E8B-9A57-2F0C1B8E5A31",
+  "format": "SugarCube",
+  "format-version": "2.36.1",
+  "start": "Start"
+}
+
+:: Story JavaScript [script]
+/* ---------- Dice-pool rules: Attributes, Hits, Sparks ---------- */
+setup.attributes = ["vig", "fin", "wit", "pre"];
+setup.attributeNames = { vig: "Vigor", fin: "Finesse", wit: "Wits", pre: "Presence" };
+setup.attributeDesc = { vig: "strength, toughness, raw force", fin: "agility, aim, quick hands", wit: "perception, learning, cunning", pre: "will, charm, force of personality" };
+setup.roll = function (n, d) { var t = 0; for (var i = 0; i < n; i++) t += random(1, d); return t; };
+
+/* Roll a pool of d6 plus one Fate die. 4+ is a hit. Fate 6 = two hits, Fate 1 cancels one hit. */
+setup.rollPool = function (n, noLuck) {
+  var v = State.variables, dice = [], hits = 0, d, i;
+  n = Math.max(1, n);
+  for (i = 0; i < n; i++) {
+    d = random(1, 6);
+    if (d === 1 && v.race === "Smallfolk" && !noLuck) d = random(1, 6);   /* Lucky */
+    dice.push(d);
+    if (d >= 4) hits++;
+  }
+  var w = random(1, 6), note = "";
+  if (w === 6) { hits += 2; note = "Fate triumph: +2 hits"; }
+  else if (w === 1 && hits > 0) { hits--; note = "Fate snag: -1 hit"; }
+  return { dice: dice, wild: w, hits: hits, note: note, n: n };
+};
+
+/* ---------- Lineages ---------- */
+setup.races = {
+  "Human":        { bonus: { pre: 1, wit: 1 }, dark: false, skill: null,
+                    summary: "Ambitious and adaptable, found in every city of the Western Reach.",
+                    traits: "+1 Presence, +1 Wits. Adaptable: you begin each rest with an extra Spark." },
+  "Elf":          { bonus: { fin: 1, wit: 1 }, dark: true, skill: "Perception",
+                    summary: "Graceful, long-lived, and sharp-eyed.",
+                    traits: "+1 Finesse, +1 Wits. Nightsight. Trained in Perception." },
+  "Dwarf":        { bonus: { vig: 2 }, dark: true, skill: null,
+                    summary: "Stout and stubborn, born to stone and hard work.",
+                    traits: "+2 Vigor. Nightsight. Stone-hardy: you take half damage from traps and poison." },
+  "Smallfolk":     { bonus: { fin: 1, pre: 1 }, dark: false, skill: null,
+                    summary: "Small, brave, and famously lucky.",
+                    traits: "+1 Finesse, +1 Presence. Lucky: any die showing a 1 is rerolled once." },
+  "Tuskborn":     { bonus: { vig: 2 }, dark: true, skill: "Intimidation",
+                    summary: "Fierce and enduring, marked by tusks and old blood.",
+                    traits: "+2 Vigor. Nightsight. Trained in Intimidation. Relentless: once per rest, drop to 1 Stamina instead of 0." },
+  "Hellmarked":   { bonus: { pre: 1, wit: 1 }, dark: true, skill: "Deception",
+                    summary: "Bearing an infernal brand, and the stares that come with it.",
+                    traits: "+1 Presence, +1 Wits. Nightsight. Trained in Deception." },
+  "Drakeblood":   { bonus: { vig: 1, pre: 1 }, dark: false, skill: null,
+                    summary: "Proud, scaled, and draconic in blood.",
+                    traits: "+1 Vigor, +1 Presence. Breath Weapon: once per rest, 4 damage that ignores Guard." },
+  "Gnome":        { bonus: { wit: 2 }, dark: true, skill: "Investigation",
+                    summary: "Curious, inventive, and hard to fool.",
+                    traits: "+2 Wits. Nightsight. Trained in Investigation. Tinker's Mind: +1 die on Wits checks." },
+  "Twilight-kin": { bonus: { pre: 1, fin: 1 }, dark: true, skill: "Discernment",
+                    summary: "Charming, adaptable, and welcome almost anywhere.",
+                    traits: "+1 Presence, +1 Finesse. Nightsight. Trained in Discernment." }
+};
+
+/* ---------- Callings ---------- */
+setup.classes = {
+  "Blade": { atk: "vig", weapon: "longsword", dmg: 2, armor: 2, vit: 3, skills: ["Athletics", "Intimidation"],
+    feat: "Cleaving Blow", featDesc: "an attack that deals +3 damage",
+    gear: ["Longsword", "Chain hauberk", "Shield"],
+    summary: "Armored, tough, and steady with any weapon.",
+    rec: { vig: 4, fin: 2, wit: 2, pre: 2 } },
+  "Shadow": { atk: "fin", weapon: "dagger", dmg: 2, armor: 1, vit: 2, skills: ["Stealth", "Pilfering"],
+    feat: "Backstab", featDesc: "an attack with +3 dice that ignores 1 Guard",
+    gear: ["Dagger", "Leather coat", "Lockpicks"],
+    summary: "Quick, quiet, and lethal when the guard drops.",
+    rec: { vig: 1, fin: 4, wit: 3, pre: 2 } },
+  "Spellwright": { atk: "wit", weapon: "Ember Bolt", dmg: 3, armor: 1, vit: 1, skills: ["Occult", "Investigation"],
+    feat: "Arcane Bolt", featDesc: "raw force that ignores Guard and deals +3 damage",
+    gear: ["Quarterstaff", "Spellbook", "Component pouch"],
+    summary: "A scholar of the hidden currents of magic who bends reality with study.",
+    rec: { vig: 1, fin: 2, wit: 4, pre: 3 } },
+  "Vowed": { atk: "vig", weapon: "mace", dmg: 2, armor: 2, vit: 3, skills: ["Medicine", "Religion"],
+    feat: "Mending Prayer", featDesc: "heal 4 + Presence Stamina",
+    gear: ["Mace", "Chain hauberk", "Shield", "Holy symbol"],
+    summary: "Sworn to a higher power, armed with faith and a heavy mace.",
+    rec: { vig: 3, fin: 1, wit: 3, pre: 3 } },
+  "Wayfarer": { atk: "fin", weapon: "longbow", dmg: 2, armor: 1, vit: 3, skills: ["Survival", "Perception"],
+    feat: "Twin Shot", featDesc: "make two attacks at once",
+    gear: ["Longbow", "Scale vest", "Hunting knife"],
+    summary: "A wanderer of the wilds, deadly at range.",
+    rec: { vig: 2, fin: 4, wit: 3, pre: 1 } },
+  "Voice": { atk: "fin", weapon: "rapier", dmg: 2, armor: 1, vit: 3, skills: ["Persuasion", "Performance"],
+    feat: "Cutting Word", featDesc: "3 damage, and your foe attacks with 3 fewer dice next turn",
+    gear: ["Rapier", "Leather coat", "Lute"],
+    summary: "A silver-tongued performer whose words cut deeper than steel.",
+    rec: { vig: 1, fin: 3, wit: 2, pre: 4 } }
+};
+
+/* ---------- Pasts ---------- */
+setup.backgrounds = {
+  "Old Soldier":      { skills: ["Athletics", "Intimidation"], gold: 10, gear: ["Rank insignia"], summary: "You served in a Highmarket or Ironquay garrison." },
+  "Temple-raised":    { skills: ["Discernment", "Religion"], gold: 15, gear: ["Prayer book"], summary: "You grew up tending a temple." },
+  "Gutter-born":      { skills: ["Deception", "Stealth"], gold: 15, gear: ["Crowbar", "Dark cloak"], summary: "You once worked the shadier side of the docks." },
+  "Scholar":          { skills: ["Occult", "History"], gold: 10, gear: ["Bottle of ink", "Scholar's letter"], summary: "You spent years among scrolls and dusty archives." },
+  "Wilder":           { skills: ["Survival", "Athletics"], gold: 10, gear: ["Hunting trap", "Traveler's pack"], summary: "You grew up far from any city wall." },
+  "Village Champion": { skills: ["Beast-craft", "Survival"], gold: 10, gear: ["Farmer's tools"], summary: "Your village still tells the tale of what you did." }
+};
+
+/* ---------- Character building ---------- */
+setup.sumBase = function (b) { var s = 0; setup.attributes.forEach(function (a) { s += b[a]; }); return s; };
+setup.bump = function (a, dir) {
+  var v = State.variables, nv = v.base[a] + dir;
+  if (nv < 1 || nv > 4) return;
+  var t = setup.sumBase(v.base) - v.base[a] + nv;
+  if (t - 4 > 6) return;
+  v.base[a] = nv;
+  v.points = 10 - t;
+};
+setup.applyRec = function () {
+  var v = State.variables;
+  v.base = Object.assign({}, setup.classes[v.class].rec);
+  v.points = 10 - setup.sumBase(v.base);
+};
+setup.sparkMax = function () { return 3 + (State.variables.race === "Human" ? 1 : 0); };
+setup.finalize = function () {
+  var v = State.variables, r = setup.races[v.race], c = setup.classes[v.class], b = setup.backgrounds[v.bg];
+  v.final = {};
+  setup.attributes.forEach(function (a) { v.final[a] = Math.min(5, v.base[a] + (r.bonus[a] || 0)); });
+  var sk = [];
+  c.skills.concat(b.skills, [v.extraSkill, r.skill]).forEach(function (s) { if (s && sk.indexOf(s) < 0) sk.push(s); });
+  v.skills = sk;
+  v.maxhp = 10 + 2 * v.final.vig + c.vit;
+  v.hp = v.maxhp;
+  v.guard = c.armor + (v.final.fin >= 3 ? 1 : 0);
+  v.sparks = setup.sparkMax();
+  v.breath = (v.race === "Drakeblood") ? 1 : 0;
+  v.relentlessUsed = false;
+  v.atkBonus = 0; v.rank = 0;
+  v.potions = 2;
+  v.gold = b.gold + 10;
+  v.inv = c.gear.concat(b.gear);
+};
+setup.rest = function () {
+  var v = State.variables;
+  v.hp = v.maxhp;
+  v.sparks = setup.sparkMax();
+  v.breath = (v.race === "Drakeblood") ? 1 : 0;
+  v.relentlessUsed = false;
+  v.campTalk = {};
+};
+setup.heal = function (n) {
+  var v = State.variables, before = v.hp;
+  v.hp = Math.min(v.maxhp, v.hp + n);
+  return v.hp - before;
+};
+setup.hurt = function (n) {   /* environmental damage never kills */
+  var v = State.variables;
+  v.hp = Math.max(1, v.hp - n);
+};
+setup.rank = function () {    /* milestone growth: +3 max Stamina each rank, +1 attack die every second rank */
+  var v = State.variables;
+  v.rank = (v.rank || 0) + 1;
+  v.maxhp += 3;
+  v.hp = Math.min(v.maxhp, v.hp + 3);
+  if (v.rank % 2 === 0) v.atkBonus = (v.atkBonus || 0) + 1;
+};
+
+/* ---------- Checks: roll Attribute (+2 if Trained) dice, need N hits ---------- */
+setup.check = function (attribute, skill, need) {
+  var v = State.variables;
+  var base = v.final[attribute];
+  var trained = (skill && v.skills.indexOf(skill) >= 0) ? 2 : 0;
+  var extra = (attribute === "wit" && v.race === "Gnome") ? 1 : 0;
+  var extraLabel = "Tinker's Mind";
+  if (skill === "Resolve") {   /* steadiness of mind or faith */
+    trained = ["Religion", "Intimidation", "Discernment", "Performance"].some(function (s) { return v.skills.indexOf(s) >= 0; }) ? 2 : 0;
+    if (v.survivor) { extra += 1; extraLabel = "Tam's company"; }
+  }
+  var pen = setup.dreadPenalty();
+  var aid = 0, aidName = "";
+  if (skill && (v.dread || 0) < 6) {
+    (v.party || []).some(function (id) {
+      var c = setup.companions[id];
+      var ok = (skill === "Resolve")
+        ? c.skills.some(function (s) { return ["Religion", "Intimidation", "Discernment", "Performance"].indexOf(s) >= 0; })
+        : c.skills.indexOf(skill) >= 0;
+      if (ok) { aid = 1; aidName = c.short; return true; }
+      return false;
+    });
+  }
+  var n = Math.max(1, base + trained + extra + aid - pen);
+  var p = setup.rollPool(n);
+  return { n: p.n, base: base, trained: trained, extra: extra, extraLabel: extraLabel, pen: pen, aid: aid, aidName: aidName, dice: p.dice, wild: p.wild, hits: p.hits, note: p.note,
+           need: need, success: p.hits >= need, skill: skill || setup.attributeNames[attribute], attribute: setup.attributeNames[attribute] };
+};
+
+/* ---------- Crawl resources: Light, Dread, Provisions, the Stirring ---------- */
+setup.dreadPenalty = function () { var d = State.variables.dread || 0; return d >= 6 ? 2 : (d >= 3 ? 1 : 0); };
+setup.gainDread = function (n) { var v = State.variables; v.dread = Math.min(10, (v.dread || 0) + n); };
+setup.easeDread = function (n) { var v = State.variables; v.dread = Math.max(0, (v.dread || 0) - n); };
+setup.startDeep = function () {
+  var v = State.variables;
+  v.light = 6; v.prov = 2; v.flasks = 0; v.salt = 0; v.dread = 0;
+  v.stir = 0; v.nextHunt = 6; v.moves = 0; v.hunt = false; v.huntDest = "";
+  v.depth = 1; v.crawling = false; v.seen = {};
+  v.survivor = false; v.knowsName = false; v.journal = false; v.chalk = false;
+  v.checkpoint = "DeepAdit";
+};
+setup.burn = function (n) { var v = State.variables; v.light = Math.max(0, v.light - n); };
+setup.stirCheck = function () {
+  var v = State.variables;
+  if (v.stir >= v.nextHunt) { v.hunt = true; v.nextHunt = v.stir + 6; }
+};
+setup.step = function () {
+  var v = State.variables;
+  v.moves++;
+  if (!(setup.races[v.race].dark && v.moves % 2 === 0)) setup.burn(1);   /* nightsight stretches your light */
+  v.stir++;
+  if (v.light <= 0) setup.gainDread(1);                                    /* the dark feeds your fear */
+  setup.stirCheck();
+};
+setup.camp = function () {
+  var v = State.variables, chapel = (v.campAt === "DeepChapel");
+  v.lastCampCost = setup.campCost();
+  v.prov = Math.max(0, v.prov - v.lastCampCost);
+  v.stir += chapel ? 1 : 2;
+  setup.rest();
+  setup.easeDread(chapel ? 4 : 3);
+  setup.stirCheck();
+};
+setup.useFlask = function () { var v = State.variables; if (v.flasks > 0) { v.flasks--; v.light = Math.min(12, v.light + 6); } };
+setup.useSalt = function () { var v = State.variables; if (v.salt > 0) { v.salt--; setup.easeDread(2); } };
+setup.useDraught = function () { var v = State.variables; if (v.potions > 0) { v.potions--; setup.heal(setup.roll(1, 4) + 3); } };
+setup.crawlSetback = function () {
+  var v = State.variables;
+  v.dread = Math.min(9, v.dread + 2); v.prov = Math.max(0, v.prov - 1); setup.burn(2); v.hunt = false;
+};
+
+/* ---------- Party: up to 2 companions ---------- */
+setup.companions = {
+  kess: { name: "Kess Dunmarrow", short: "Kess", title: "dwarf shield-warden", role: "Guardian", skills: ["Athletics", "Survival"], fee: 8,
+    guard: 1, t3: { guard: 2 },
+    roleText: "Raises your Guard by 1 each round (2 at Trust 3).",
+    pitch: ["'A shield is only good if somebody stands behind it,' she says, thumping the rim. 'You look like you could use one.'"],
+    talk: [
+      ["Kess polishes her shield rim with a thumb. 'This came out of the Iron Steps, my clan's hold. Cave-in, twenty winters back. I keep the shield so I remember what I could not hold up.'"],
+      ["'People think dwarves are not afraid of the dark,' she says quietly. 'We are more afraid. We know what lives in it.' She meets your eye. 'But I would rather face it beside someone who stays.'"],
+      ["Kess holds her shield out between you and the dark, as if to show you. 'I have broken more shields than I can count. You are the first person I would break a new one for.' (Trust 3: her Bulwark grows stronger.)"]],
+    chat: ["Kess runs a whetstone down her axe. 'A good edge and a good night's sleep. That's all a dwarf needs.'", "'Ever seen a mountain fall?' Kess asks. 'No? Good. Hope you never do.'"],
+    banter: { victory: ["'That is how you hold a line,' Kess mutters, shaking out her arm.", "Kess spits. 'Barely a warm-up.'"],
+              dread: ["'Eyes on my shield,' Kess says, stepping close. 'Not on that.'"],
+              end: ["Kess claps you on the back hard enough to rattle your teeth. 'Next time, pick a job with more sunlight.'"] } },
+  wren: { name: "Wren Ashgrove", short: "Wren", title: "aloof elf archer", role: "Striker", skills: ["Perception", "Stealth"], fee: 10,
+    pool: 4, dmg: 2, t3: { pool: 5 },
+    roleText: "Shoots each round with 4 dice, damage 2 (5 dice at Trust 3).",
+    pitch: ["'Do not stand in front of my arrows,' says the elf, not looking up from her bowstring. 'Anywhere else is fine.'"],
+    talk: [
+      ["Wren watches the tree line. 'I am a hundred and forty. Do you know what that does to a person? Everything is a rerun. Villages, wars, kings. I keep looking for something new.' A pause. 'You are almost interesting.'"],
+      ["'I had a sister,' Wren says, and does not say more for a while. 'She left to find something new, too. I have been looking for her trail for thirty years. It leads to every ruin and dead end.' Another pause. 'This is a nicer dead end than most.'"],
+      ["Wren sets her bow down, which you have never seen her do. 'I stopped looking for her some time ago,' she admits. 'I have been looking for company. Do not tell anyone I said that.' (Trust 3: her aim sharpens.)"]],
+    chat: ["Wren counts her arrows twice, silently. 'Habit,' she says.", "'The stars are wrong here,' Wren murmurs, looking up. 'Or I am.'"],
+    banter: { victory: ["'Adequate,' Wren says, retrieving an arrow.", "Wren notches another arrow. 'Was that all of them? Pity.'"],
+              dread: ["Wren's hand is steady on her bow, but her eyes keep going to the dark. 'I do not like this place,' she says softly."],
+              end: ["Wren inclines her head, the closest she comes to a bow. 'That was almost worth the wait.'"] } },
+  osric: { name: "Brother Osric Vale", short: "Osric", title: "gentle temple healer", role: "Healer", skills: ["Medicine", "Religion"], fee: 6,
+    heal: 3, healEvery: 2, t3: { healEvery: 1 },
+    roleText: "Mends you for 3 Stamina every second round (every round at Trust 3).",
+    pitch: ["'I cannot fight,' Osric admits, twisting his prayer beads, 'but I can make sure you do not stay wounded. If you will have me.'"],
+    talk: [
+      ["Osric fiddles with his beads. 'I am not brave. I want to be. I have healed a hundred bodies and never once stood between anyone and a blade.' He gives a small smile. 'I would like to try.'"],
+      ["'My teacher said faith is a lamp, not a wall,' says Osric. 'A wall keeps the dark out. A lamp lets you walk through it.' He glances at the shadows. 'I have been trying to be a lamp.'"],
+      ["Osric presses his hands over yours. 'I have stopped waiting to be brave,' he says. 'I am just going to keep going.' A warm hum runs through you. (Trust 3: he mends you every round.)"]],
+    chat: ["Osric sorts his bandages into neat rolls. 'It calms me,' he explains.", "'I pray for the ones we fight, too,' Osric admits. 'Do not tell anyone.'"],
+    banter: { victory: ["Osric exhales. 'Thank the gods. Is anyone bleeding? Sit, sit.'", "'Oh, well done,' Osric says faintly, and starts checking you for wounds."],
+              dread: ["Osric murmurs a prayer under his breath, and the shadows seem a little farther away."],
+              end: ["Osric hugs you, then apologizes, then hugs you again. 'I am so glad you are alive.'"] } },
+  pip: { name: "Pip Copperkettle", short: "Pip", title: "cheerful smallfolk cutpurse", role: "Trickster", skills: ["Pilfering", "Stealth"], fee: 5,
+    weaken: 1, t3: { weaken: 2 },
+    roleText: "Throws foes off, so they attack with 1 fewer die each round (2 at Trust 3).",
+    pitch: ["'I am not a thief,' Pip says, and a purse you had forgotten about drops into your hand. 'I am a very quick borrower. Take me along? I am great in a fight. From a distance.'"],
+    talk: [
+      ["Pip chatters as he works a lockpick between his fingers. 'Grew up in the Highmarket gutters, third of nine. Every one of us learned to fight dirty or not at all.' He grins. 'I picked dirty.'"],
+      ["'People think thieves have no rules,' Pip says. 'We have loads. Never take from a friend. Never take the last of anything. Never leave a mate.' He looks at you. 'That last one is the big one.'"],
+      ["Pip drops a small lump of silver into your pocket. 'That one is a gift, not a borrow,' he says. 'First one I have ever given.' (Trust 3: he throws foes off even more.)"]],
+    chat: ["Pip juggles three stolen apples. 'They are mine now. Legally. Ish.'", "'You know what I like about you?' Pip says. 'You do not check your pockets after I hug you.'"],
+    banter: { victory: ["'Did you see that?' Pip crows. 'Did you SEE that? I distracted him with my whole personality.'", "'Anything on him worth borrowing?' Pip asks, already checking."],
+              dread: ["Pip is unusually quiet. 'You know I talk when I am scared,' he whispers. 'That is how you know it is bad.'"],
+              end: ["Pip tosses a stolen apple in the air and catches it. 'Best job I ever had. Let us do it again.'"] } },
+  sable: { name: "Sable Marrowe", short: "Sable", title: "wry hellmarked spellwright", role: "Striker", skills: ["Occult", "Investigation"], fee: 12,
+    pool: 3, dmg: 2, ignore: true, t3: { dmg: 3 },
+    roleText: "Casts each round with 3 dice, damage 2, ignoring Guard (damage 3 at Trust 3).",
+    pitch: ["'The horns are real,' Sable says dryly, 'and no, I do not want to talk about it. But I am very good at making things stop moving.'"],
+    talk: [
+      ["'People see the brand and assume the worst,' Sable says. 'I used to argue. Now I let them assume. It saves time.' She flicks a spark between her fingers. 'Most of them stop assuming when I set something on fire.'"],
+      ["'My mother sold me for a bargain she never explained,' Sable says quietly. 'I do not know what was traded, or who holds the debt. I read everything I can find, hoping to find the clause.' She snaps a book shut. 'So far, nothing.'"],
+      ["'You have not once asked me to hide it,' Sable says, touching the brand at her temple. She smiles, small and real. 'That counts for more than you know.' (Trust 3: her bolts hit harder.)"]],
+    chat: ["Sable reads by the light of her own fingertips. 'Convenient,' she says. 'Do not tell the lantern.'", "'Ask me why I do not sleep,' Sable says. 'No, do not.'"],
+    banter: { victory: ["Sable lowers her hand, sparks fading. 'Efficient.'", "'I would say it was a pleasure,' Sable says, 'but I would be lying.'"],
+              dread: ["Sable's eyes flicker toward the dark. 'The brand itches when something old is near,' she says. 'It is itching.'"],
+              end: ["Sable extends a hand. 'Whatever the debt is, at least this bargain was a fair one.'"] } },
+  gar: { name: "Gar Thorne", short: "Gar", title: "big-hearted tuskborn brawler", role: "Striker", skills: ["Athletics", "Intimidation"], fee: 9,
+    pool: 4, dmg: 3, t3: { pool: 5 },
+    roleText: "Brawls each round with 4 dice, damage 3 (5 dice at Trust 3).",
+    pitch: ["'Fight? Yes. Food? Also yes.' Gar grins around his tusks. 'Two things I am good at. Are we hiring?'"],
+    talk: [
+      ["'My mother was a farrier, my father an orc raider,' Gar says around a mouthful of bread. 'They met over a stolen horse. I have been apologizing to horses ever since.' He chews thoughtfully. 'Not really.'"],
+      ["'When I was young I broke a man's arm in a fight I started,' Gar says. 'He forgave me, and that was worse.' He rolls his shoulders. 'Now I only hit people who are trying to hit someone else first.'"],
+      ["'I was going to wander alone,' Gar says. 'It is easier. Nobody expects you back.' He knocks his knuckles against yours. 'You expected me back. That is new.' (Trust 3: he hits even harder.)"]],
+    chat: ["Gar unwraps a lump of cheese the size of his fist. 'Want some? No? More for me.'", "'I have a theory,' Gar says. 'Most monsters are just hungry. I understand them. I just hit them anyway.'"],
+    banter: { victory: ["Gar cracks his knuckles. 'Is there more? I am still warm.'", "'Somebody should tell it we were still eating,' Gar grumbles."],
+              dread: ["Gar bares his tusks at the shadows. 'Come out and say that.' Then, quieter: 'Stay close.'"],
+              end: ["Gar lifts you clean off the ground in a hug. 'Now can we eat? I am starving.'"] } },
+  bram: { name: "Bram Holloway", short: "Bram", title: "caravan sergeant", role: "Guardian", skills: ["Athletics", "Perception"], fee: 0,
+    guard: 1, t3: { guard: 2 },
+    roleText: "Raises your Guard by 1 each round (2 at Trust 3).",
+    pitch: ["'I owe you my voice,' Bram says, still hoarse. 'Let me pay it back with a sword.'"],
+    talk: [
+      ["Bram flexes his sword hand. 'Twenty years a guard. I never once lost a caravan until the Choir took mine. It sits on my chest.'"],
+      ["'Maeve Thornbrook found me half-starved on a road,' Bram says. 'She gave me a coat and a job. I promised her I would never lose a cart.' He looks at you. 'Help me end this right.'"],
+      ["'I have decided,' Bram says. 'When this is done, I am not going back to guarding carts. I am going with you, if you will have me.' (Trust 3: he becomes a stronger wall.)"]],
+    chat: ["Bram checks the straps on his pack twice. 'Old habit,' he says."],
+    banter: { victory: ["'That is another one that will not take a cart,' Bram says."], dread: ["'Steady,' Bram says, low and hoarse. 'We have walked worse.'"],
+              end: ["Bram stands a little straighter. 'I got my voice back. Best day of my life.'"] } },
+  tam: { name: "Tam Orrick", short: "Tam", title: "shaken young hauler", role: "Support", skills: ["Survival", "Discernment"], fee: 0,
+    boost: 2, t3: { boost: 3 },
+    roleText: "Calls out openings, giving your next attack +2 dice (+3 at Trust 3).",
+    pitch: ["'I am not much of a fighter,' Tam whispers. 'But I know these tunnels. And I am tired of hiding.'"],
+    talk: [
+      ["Tam hums softly, then stops himself. 'It is a habit now. When I hum, I do not hear it.' He looks at his hands. 'I hummed for three weeks. My throat is raw.'"],
+      ["'My father was a mine boss,' Tam says. 'He always said the dark is just a place without a lamp. I used to believe him.' He pulls his coat tighter. 'I think I need to believe him again.'"],
+      ["'I want to go home,' Tam says. 'But first I want to see that thing put out. For all the ones who did not come home.' (Trust 3: he gives you even more heart.)"]],
+    chat: ["Tam counts the lamps in the niches. 'Three hundred and twelve. I counted them every day.'"],
+    banter: { victory: ["'You did it,' Tam breathes. 'I was so sure we would die.'"], dread: ["Tam starts to hum, then bites his lip. 'Sorry. It helps.'"],
+              end: ["Tam looks up at the sky for a long time. 'I forgot it was so big,' he says."] } },
+  vess: { name: "Harl Vess", short: "Vess", title: "sardonic sellsword captain", role: "Striker", skills: ["Intimidation", "Persuasion"], fee: 0,
+    pool: 5, dmg: 2, t3: { dmg: 3 },
+    roleText: "Fights each round with 5 dice, damage 2 (damage 3 at Trust 3).",
+    pitch: ["'The Ledger is done,' Vess says with a shrug. 'But I still need work, and you look like the kind who pays.'"],
+    talk: [
+      ["Vess turns a coin over his knuckles. 'The keep never paid us. Yes, we deserted. They starved us first. I would do it again.' He shrugs. 'I would also do it better.'"],
+      ["'You know the worst part of desertion?' Vess asks. 'You keep the training. You keep the reflexes. You just lose the reason.' He glances at you. 'Nice to have one again.'"],
+      ["Vess tosses you a silver coin. 'Keep it. A captain should carry his luck.' He smiles crookedly. 'You are, for now, my captain.' (Trust 3: he hits harder.)"]],
+    chat: ["Vess flips his coin and does not look at how it lands. 'I used to decide things with this. Now I decide them myself.'"],
+    banter: { victory: ["'Not bad,' Vess says, flicking blood off his blade. 'For amateurs.'"], dread: ["Vess keeps his blade drawn and his voice light. 'Just a mine. We have all been in worse.'"],
+              end: ["Vess salutes, half mocking, half not. 'Best contract I ever took.'"] } }
+};
+setup.hubRoster = {
+  bell: ["kess", "wren", "pip", "osric"],
+  rift: ["kess", "osric", "sable", "gar"],
+  deep: ["wren", "pip", "sable", "gar"]
+};
+setup.inParty = function (id) { return State.variables.party.indexOf(id) >= 0; };
+setup.cstat = function (id) {
+  var c = setup.companions[id], t = (State.variables.trust || {})[id] || 0;
+  return t >= 3 ? Object.assign({}, c, c.t3 || {}) : c;
+};
+setup.recruit = function (id) {
+  var v = State.variables, c = setup.companions[id];
+  if (v.party.length >= 2 || v.gold < c.fee || setup.inParty(id)) return false;
+  v.gold -= c.fee; v.party.push(id);
+  if (v.trust[id] === undefined) v.trust[id] = 0;
+  return true;
+};
+setup.recruitStory = function (id) {
+  var v = State.variables, c = setup.companions[id];
+  if (setup.inParty(id)) { v.joinMsg = c.short + " is already with you."; return; }
+  if (v.party.length >= 2) {
+    v.joinMsg = c.name + " would come, but your party is full (2 companions). Send someone away from the party screen, then ask again.";
+    return;
+  }
+  v.party.push(id);
+  v.trust[id] = Math.max(1, v.trust[id] || 0);
+  v.joinMsg = c.name + " joins your party. " + c.pitch[0];
+};
+setup.dismiss = function (id) {
+  var v = State.variables, i = v.party.indexOf(id);
+  if (i >= 0) v.party.splice(i, 1);
+};
+setup.partyTalk = function (id) {
+  var v = State.variables, c = setup.companions[id];
+  v.partyTalkId = id; v.partyTalkNote = "";
+  if (v.campTalk[id]) {
+    v.partyTalkText = [c.short + " has said what they had to say for now. Perhaps after your next rest."];
+    return;
+  }
+  v.campTalk[id] = true;
+  var lvl = v.trust[id] || 0;
+  if (lvl < 3) {
+    v.partyTalkText = c.talk[lvl];
+    v.trust[id] = lvl + 1;
+    v.partyTalkNote = (lvl + 1 >= 3) ? (c.short + "'s trust in you is complete. " + c.roleText) : (c.short + " trusts you a little more.");
+  } else {
+    v.partyTalkText = [c.chat[random(0, c.chat.length - 1)]];
+  }
+  if (v.crawling && v.dread > 0) { setup.easeDread(1); v.partyTalkNote += " -1 Dread."; }
+};
+setup.banter = function (kind) {
+  var v = State.variables;
+  if (!v.party || !v.party.length) return "";
+  var id = v.party[random(0, v.party.length - 1)], lines = setup.companions[id].banter[kind];
+  if (!lines || !lines.length) return "";
+  return setup.companions[id].short + ": " + lines[random(0, lines.length - 1)];
+};
+setup.banterAll = function (kind) {
+  var v = State.variables, out = [];
+  (v.party || []).forEach(function (id) {
+    var lines = setup.companions[id].banter[kind];
+    if (lines && lines.length) out.push(setup.companions[id].short + ": " + lines[random(0, lines.length - 1)]);
+  });
+  return out;
+};
+setup.breakParty = function () {   /* uncommitted companions bolt when you break in the Deep */
+  var v = State.variables, left = [];
+  v.party = v.party.filter(function (id) {
+    if ((v.trust[id] || 0) < 2) { left.push(setup.companions[id].short); return false; }
+    return true;
+  });
+  v.leftNames = left;
+};
+setup.campCost = function () { return 1 + (State.variables.party.length >= 2 ? 1 : 0); };
+
+/* ---------- Party turn in combat ---------- */
+setup.partyTurn = function () {
+  var v = State.variables, f = v.fight;
+  v.partyGuard = 0; v.partyBoost = 0;
+  v.party.forEach(function (id) {
+    var c = setup.cstat(id), n = c.short;
+    if (f.hp <= 0 && c.role === "Striker") return;
+    if (c.role === "Guardian") {
+      v.partyGuard += c.guard;
+      f.log.push(n + " plants a shield in front of you (+" + c.guard + " Guard this round).");
+    } else if (c.role === "Striker") {
+      var p = setup.rollPool(c.pool, true);
+      var guard = c.ignore ? 0 : f.guard;
+      var net = p.hits - guard;
+      var tag = c.pool + " dice: " + p.dice.join(" ") + " | Fate " + p.wild + " = " + p.hits + " hits vs Guard " + guard;
+      if (net < 1) { f.log.push(n + " strikes but the blow is turned aside (" + tag + ")."); }
+      else { var d = c.dmg + net; f.hp -= d; f.log.push(n + " hits (" + tag + ") for " + d + " damage."); }
+    } else if (c.role === "Healer") {
+      if ((c.healEvery === 1 || (f.round % 2 === 0)) && v.hp < v.maxhp) {
+        f.log.push(n + " mends you, recovering " + setup.heal(c.heal) + " Stamina.");
+      }
+    } else if (c.role === "Trickster") {
+      f.weak = (f.weak || 0) + c.weaken;
+      f.log.push(n + " throws the foe off (-" + c.weaken + " attack " + (c.weaken > 1 ? "dice" : "die") + ").");
+    } else if (c.role === "Support") {
+      v.partyBoost += c.boost;
+      f.log.push(n + " calls out an opening (+" + c.boost + " attack " + (c.boost > 1 ? "dice" : "die") + " next round).");
+    }
+  });
+};
+
+/* ---------- NPC dialogue ---------- */
+setup.npcs = {
+  maeve: { name: "Maeve Thornbrook", title: "merchant of Thornbrook & Daughters",
+    greet: "Maeve is propped against a wall with her arm in a sling, watching the road as if the robed folk might walk out of it.",
+    topics: [
+      { id: "saw", label: "What did you see?", text: ["'They came out of the trees in ones and twos, all in grey. Not a word. Only this hum, low, like a beehive in the wall.'", "She shivers. 'The one leading carried a chalk-white staff. He was the only one whose lips moved, and I could not hear a thing. I could only watch him.'"],
+        effect: function () { var v = State.variables; v.clues++; return "Clue gained: the leader's lips moved but no sound came. (+1 clue)"; } },
+      { id: "caravan", label: "Tell me about your caravan.", text: ["'Thornbrook & Daughters. Four wagons, six guards, and my three girls running the depot in Highmarket while I do the hauling.' She smiles thinly. 'Or we did. The wagons are ruined, but the girls are fine. That is something.'"] },
+      { id: "deal", label: "Any thanks for a helping hand?", req: function () { return State.variables.tended; },
+        text: ["'You bound my arm and did not ask for a coin. That is worth more than coin.' She reaches into her purse. 'I will see the market gives you fair prices from now on.'"],
+        effect: function () { State.variables.maeveDeal = true; return "Healing draughts cost 6 crowns at the market."; } },
+      { id: "bram", label: "Who were your guards?", text: ["'Sergeant Bram Holloway led them. Ten years with me, and the best I ever had. If he is alive, he will be angry, not dead.' She looks toward the hills. 'Tell him his pay is doubled.'"],
+        effect: function () { var v = State.variables; v.trust.bram = Math.max(v.trust.bram || 0, 1); return ""; } }
+    ] },
+  alden: { name: "Brother Alden", title: "priest of the Temple of First Light",
+    greet: "Brother Alden holds a rag in one hand and a little brass polish in the other, and looks at the empty bell frame as if an old friend has left.",
+    topics: [
+      { id: "bell", label: "Tell me about the missing bell.", text: ["'We called her Morning Voice. Cast a hundred and ten years ago from a dozen village pots. She has rung every dawn since, and every funeral, and every wedding.' He wipes his eyes. 'You do not miss a sound until it is gone.'"] },
+      { id: "choir", label: "Who were the Hollow Choir?", text: ["'A heresy, a century past. They taught that a bell's note carried a soul to the gods, and the greater the bell, the greater the soul.'", "'Their last warden, Veyle Marsh, was a bell-keeper at Dunvar Hold. He lost his wife and then his voice to grief. They say he never spoke again.' Alden sighs. 'I always felt sorry for him.'"],
+        effect: function () { State.variables.gotDiscernment = true; return "You understand Veyle's grief. The parley will be easier."; } },
+      { id: "break", label: "How do you break a bell?", text: ["'A bell is metal and a shaped note. Break the note and it is only metal. The old bell-wards did it three ways: a sharp counter-tone, a blessing of silence, or a hammer at the crown.'"],
+        effect: function () { State.variables.sabHelp = true; return "Sabotaging the bell needs one less hit."; } },
+      { id: "bless", label: "May I have a blessing?", text: ["He murmurs a short prayer and places his thumb on your brow. Then he presses a small vial into your hand. 'For the road.'"],
+        effect: function () { State.variables.potions++; return "+1 healing draught."; } }
+    ] },
+  tomas: { name: "Tomas", title: "stablehand at the Gilded Heron",
+    greet: "Tomas mucks out a stall with the nervous energy of a boy who has been listening to too many rumors.",
+    topics: [
+      { id: "road", label: "What do you know about the north road?", text: ["'Wolves,' Tomas says. 'Half-starved, and the pack has been driven off their hunting grounds by something. The one on the hill road is old and thin. Do not let it corner you and you will be fine.'"],
+        effect: function () { State.variables.wolfWarn = true; return "The wolf on the road will be weaker."; } },
+      { id: "stranger", label: "Seen any strangers lately?", text: ["'A grey-robed woman came through a week ago, buying rope and a chisel. Paid in old silver, the sort you never see anymore. She hummed the whole time. It made the horses nervous.'"] },
+      { id: "life", label: "How is life at the Heron?", text: ["'Warm, mostly. The ale is bad but the fire is good, and the cook lets me sit by the hearth when it is cold.' He shrugs. 'It is better than the farm. It is a lot better than a lot of things.'"] }
+    ] },
+  corvin: { name: "Old Corvin", title: "barge-master",
+    greet: "Old Corvin sits on an upturned bucket, mending a net, and gives you a grunt that might be a greeting.",
+    topics: [
+      { id: "hold", label: "Tell me about Dunvar Hold.", text: ["'My grandfather ran salvage there when the dwarves held it. Hall of Echoes is the tricky bit. Rune-plates in the floor. The old ones are worn where dwarven boots wore them, but the new ones are wired for darts.'"],
+        effect: function () { State.variables.holdMap = true; return "The Hall of Echoes checks need one less hit."; } },
+      { id: "river", label: "How is the river?", text: ["'Higher than it should be for the season. Something upstream is shifting the flow.' He squints at the water. 'Or I am getting old and complain.'"] },
+      { id: "bell", label: "Why does the ferry bell matter to you?", text: ["'My father drowned in the fog on this river. The ferry bell was the only thing that got the rest of us home.' He looks at his empty hook. 'I have not slept right since it went.'"] }
+    ] },
+  bram: { name: "Sergeant Bram Holloway", title: "guard of Thornbrook & Daughters",
+    greet: "Bram rubs his wrists, still red from the shackles. His voice is hoarse, as though he has been shouting for a week without a sound.",
+    topics: [
+      { id: "captured", label: "What happened to you?", text: ["'They came out of the trees humming. We drew steel, but the sound made our arms go slack. They took us one by one, and took our voices out of our throats.' He swallows. 'I keep checking that mine is still here.'"] },
+      { id: "below", label: "What should I expect down below?", text: ["'A chamber with a big bell. A priest who weeps. The bell is the heart of it. Hit the crown, and the note breaks.' He points at his own head. 'That is what I would try.'"],
+        effect: function () { State.variables.sabHelp = true; return "Sabotaging the bell needs one less hit."; } }
+    ] },
+  veyle: { name: "Choirmaster Veyle", title: "the Hollow Choir's last warden",
+    greet: "Veyle does not move as you enter. The Hollow Bell hums behind him, and his tears fall as if they had been falling for years.",
+    topics: [
+      { id: "why", label: "Why did you take the bells?", text: ["'Bells carry voices,' he whispers. 'Every bell in this valley rang for something, a wedding, a funeral, a warning. I wanted to gather them, all those voices, and make something that could not be silenced again.'"] },
+      { id: "lost", label: "What did you lose?", text: ["'My wife's voice. She sang in the temple choir. I cannot remember what she sounded like.' He touches his throat. 'The Hollow Bell remembers all the voices it ever heard. I hoped it might remember hers.'"],
+        effect: function () { State.variables.gotDiscernment = true; return "You understand his grief. Parley will be easier."; } }
+    ] },
+  marrow: { name: "Warden-Captain Isolde Marrow", title: "commander of Thornwatch Keep",
+    greet: "Marrow leans over her map table, four red circles inked around the ravine. She speaks without looking up.",
+    topics: [
+      { id: "ledger", label: "Tell me about the Crimson Ledger.", text: ["'Harl Vess was a good soldier. He was under my command for six years. When the coin stopped coming, half his company walked away. He is angry, not evil. He would take an honest offer over a fight.'"],
+        effect: function () { State.variables.hintLedger = true; return "Bargaining with the Ledger needs one less hit."; } },
+      { id: "cistern", label: "What about the old cistern?", text: ["'A hag lives there. Marga Crow. She has traded with this valley for a century. She likes coin and manners, in that order. Do not insult her, and she will not curse you.'"],
+        effect: function () { State.variables.hintCistern = true; return "Haggling with Marga needs one less hit."; } },
+      { id: "chaplain", label: "Who commanded the keep before you?", text: ["'A chaplain named Kessrick was the keep's spiritual officer for thirty years. He went into the Rift one winter to bury the dead from a rockslide and did not come back. I have wondered.'"],
+        effect: function () { State.variables.kessrickLore = true; return "You know who Kessrick was. The parley will be easier."; } },
+      { id: "keep", label: "Tell me about Thornwatch.", text: ["'A ring of towers built on a ridge to watch the Rift. It has done its job for two hundred years. The Rift was always empty, so nobody thought to ask why.'"] }
+    ] },
+  hessa: { name: "Hessa Brindle", title: "innkeeper of the Broken Shield",
+    greet: "Hessa is polishing a mug that is already clean, and she has the look of someone who has heard every rumor in the valley twice.",
+    topics: [
+      { id: "spore", label: "What do you know about the glowing cave?", text: ["'Herders went in to shelter from a storm. Came out with their eyes gone flat. They will not speak but they will follow you. If you cut through the spores quick, the sick ones are slower.'"],
+        effect: function () { State.variables.hintSpore = true; return "The Sporebound will have 2 less Stamina."; } },
+      { id: "silk", label: "What about the silk caves?", text: ["'A spider, big as a cart. It hangs from the roof. Do not walk under the strands. Cut the anchors and the whole web comes down on it.'"],
+        effect: function () { State.variables.hintSilk = true; return "The Silk-Weaver will have 2 less Stamina."; } },
+      { id: "biz", label: "How is business?", text: ["'Terrible. Half my regulars are patrols that are not coming back. The other half drink to forget they might be next.' She sets down the mug. 'It is a living.'"] },
+      { id: "history", label: "What is the Rift's history?", text: ["'Dwarves dug it looking for silver. Then something went wrong and they left. Then the keep went up. Then the keep forgot why.' She shrugs. 'Ask the Captain. She likes a good ghost story.'"] }
+    ] },
+  vess: { name: "Harl Vess", title: "captain of the Crimson Ledger",
+    greet: "Vess sits with his boots on a barrel, a black stone hanging from his belt. He watches you with tired, amused eyes.",
+    topics: [
+      { id: "who", label: "Who are you?", text: ["'Harl Vess. Sergeant, then captain, then deserter, in that order.' He scratches his jaw. 'Thornwatch stopped paying us, so we stopped guarding. Simple math.'"] },
+      { id: "want", label: "What does the Ledger want?", text: ["'A pardon. A fair contract. A fire and a roof.' He shrugs. 'Not much, when you say it out loud. Nobody ever asks.'"],
+        effect: function () { State.variables.vessWants = true; return "Bargaining or facing down the Ledger needs one less hit."; } },
+      { id: "stone", label: "Where did you get the black stone?", text: ["'It was lying in the cave mouth. It hums, if the wind is right.' He turns it over. 'I do not like it. But I do not like leaving things lying around, either.'"] }
+    ] },
+  marga: { name: "Marga Crow", title: "the hag of the Brine Cistern",
+    greet: "Marga arranges a chessboard of bones on her driftwood throne, and does not look up. 'Mind the water,' she says. 'It bites.'",
+    topics: [
+      { id: "price", label: "What is your price?", text: ["'Everyone pays. Coin, name, or story. Coin is simplest, but stories keep.' She grins. 'I have not heard a new one in fifty years.'"] },
+      { id: "priest", label: "Who is the priest in the vault?", text: ["'A pious fool who thought he could bargain with a fire. The idol at the far end burns things that should not burn. He fed it, bit by bit, and now it feeds on him.' She clicks a bone. 'I could have told him. Nobody asked.'"],
+        effect: function () { State.variables.kessrickLore = true; return "You know the priest's story. The parley will be easier."; } },
+      { id: "why", label: "Why do you live here?", text: ["'Quiet. Cold. Nobody stays to argue.' Her eyes go distant. 'I had a hearth once, and a house, and a name I answered to. This is better.'"] }
+    ] },
+  kessrick: { name: "Ash-Priest Kessrick", title: "keeper of the Ember Idol",
+    greet: "Kessrick kneels at the idol's foot in charred vestments, his back to you. The black fire crackles softly, like a man muttering in his sleep.",
+    topics: [
+      { id: "before", label: "Who were you before this?", text: ["'A chaplain. I buried the dead of the rockslide, and I prayed over them, and no prayer answered. I grew tired of a God who did not answer.' He touches the idol. 'The ember answered.'"],
+        effect: function () { State.variables.kessrickLore = true; return "You understand his despair. The parley will be easier."; } },
+      { id: "idol", label: "What is the idol?", text: ["'A brazier of the old dwarves, meant to warm the deep halls. It burns what is given to it. I gave it prayers. Then names. Then years.' He shrugs. 'It gave me a kind of peace. I know how that sounds.'"] }
+    ] },
+  varn: { name: "Mine-Warden Ilse Varn", title: "warden of Orrow's Deep",
+    greet: "Warden Varn watches the shaft mouth with a lantern held tight in both hands, as if it might be wrestled away.",
+    topics: [
+      { id: "wrong", label: "What went wrong in the mine?", text: ["'The lamps. First the ones in the lowest gallery, a week apart, then all of them. Not blown out. Just gone, as if they had never been lit. Then the crews stopped answering the signal-bells.' Her hands tighten. 'One of them was my brother.'"] },
+      { id: "supplies", label: "Any supplies to spare?", text: ["She hands you a stoppered flask from under the winch. 'Lamp oil. The best I have. Do not waste it.'"],
+        effect: function () { State.variables.flasks++; return "+1 oil flask."; } },
+      { id: "foreman", label: "Who ran the mine before you?", text: ["'Foreman Orrow Venn. Sealed the bottom levels forty years back and swore it was safe. When I took over, I found his old journal in a strongbox at the assay office. I never read it. I did not want to know.'"],
+        effect: function () { State.variables.knowsName = true; return "You know the name Orrow Venn."; } },
+      { id: "crew", label: "Tell me about the crew.", text: ["'Forty-one miners. Two came out. One is at the bunkhouse, not speaking. The other, a young hauler named Tam Orrick, stayed below. He was the last to leave the surface.' She stops. 'I hope he is alive.'"] }
+    ] },
+  dorrin: { name: "Old Dorrin", title: "winch-keeper",
+    greet: "Old Dorrin sits by the winch with a pipe he does not light, watching the rope as though it might snap.",
+    topics: [
+      { id: "advice", label: "Any advice for going below?", text: ["'The wraith at the gate hates a bright flame,' he says. 'Show it a little fire and it will go. My cousin did it once. Do not stay to see it burn.'"],
+        effect: function () { State.variables.gateHint = true; return "Offering the Wick-Wraith light costs only 2 Light."; } },
+      { id: "salt", label: "Any way to get holy salt cheaper?", text: ["'My cousin runs the salt cellar. Tell him I sent you.' He scribbles a note. 'Three crowns, not five. Do not tell the Warden.'"],
+        effect: function () { State.variables.saltDeal = true; return "Holy salt costs 3 crowns."; } },
+      { id: "stir", label: "What is the Stirring?", text: ["'The Deep notices you. Every step, every rest, every loud noise. When it has noticed enough, it sends something.' He taps his pipe. 'Move quiet. Rest short. Do not linger.'"] }
+    ] },
+  tam: { name: "Tam Orrick", title: "survivor",
+    greet: "Tam sits by the altar with his knees drawn up and his hands around a dead lantern. He looks at you as though you might vanish.",
+    topics: [
+      { id: "how", label: "How did you survive?", text: ["'I found the chapel. The dark does not like the lamps here. Even dead ones. I stayed close to the altar and hummed until my throat bled.' He swallows. 'I think that helped.'"] },
+      { id: "below", label: "What is below the Echo Hall?", text: ["'A gate. A wraith. It hates flame. I saw a miner offer it his lantern once, and it backed off.' He shudders. 'He did not come back. But it did back off.'"],
+        effect: function () { State.variables.gateHint = true; return "Offering the Wick-Wraith light costs only 2 Light."; } }
+    ] }
+};
+setup.talkTopic = function (npcId, topicId) {
+  var v = State.variables, n = setup.npcs[npcId], topic = null;
+  n.topics.forEach(function (x) { if (x.id === topicId) topic = x; });
+  v.topicText = topic.text; v.topicNote = "";
+  var key = npcId + "." + topicId;
+  if (!v.talked[key]) {
+    v.talked[key] = true;
+    if (topic.effect) v.topicNote = topic.effect() || "";
+  }
+};
+
+/* ---------- Combat: choose a stance each round ---------- */
+setup.startFight = function (f) {
+  var v = State.variables;
+  v.fight = Object.assign({ loot: 0, weak: 0, round: 0 }, f);
+  var np = (v.party || []).length;
+  v.fight.hp = Math.ceil(f.hp * [1, 1.2, 1.55][np]);      /* bigger party, tougher foes */
+  v.fight.max = v.fight.hp;
+  v.partyGuard = 0; v.partyBoost = 0;
+  v.fight.log = ["Steel is drawn. The fight begins!"];
+  v.bracing = false; v.pressed = false;
+};
+setup.playerAttack = function (o) {
+  o = o || {};
+  var v = State.variables, f = v.fight, c = setup.classes[v.class];
+  var pool = Math.max(1, v.final[c.atk] + 2 + (v.atkBonus || 0) + (o.dice || 0) + (v.partyBoost || 0) - setup.dreadPenalty());
+  var guard = o.ignoreGuard ? 0 : Math.max(0, f.guard - (o.pierce || 0));
+  var p = setup.rollPool(pool, true);
+  var net = p.hits - guard;
+  var tag = pool + " dice: " + p.dice.join(" ") + " | Fate " + p.wild + " = " + p.hits + " hits vs Guard " + guard;
+  if (net < 1) { f.log.push("Your " + c.weapon + " is turned aside (" + tag + ")."); return false; }
+  var dmg = c.dmg + net + (o.dmg || 0);
+  f.hp -= dmg;
+  f.log.push("Your " + c.weapon + " lands (" + tag + ") for " + dmg + " damage.");
+  return true;
+};
+setup.enemyTurn = function () {
+  var v = State.variables, f = v.fight;
+  if (f.hp <= 0) return;
+  var pool = Math.max(1, f.pool - (f.weak || 0));
+  var guard = Math.max(0, v.guard + (v.bracing ? 2 : 0) - (v.pressed ? 1 : 0) + (v.partyGuard || 0));
+  var p = setup.rollPool(pool, true);
+  var net = p.hits - guard;
+  var tag = pool + " dice: " + p.dice.join(" ") + " | Fate " + p.wild + " = " + p.hits + " hits vs your Guard " + guard;
+  if (net < 1) {
+    f.log.push("The " + f.name + " attacks but you turn it aside (" + tag + ").");
+  } else {
+    var dmg = f.dmg + net;
+    v.hp -= dmg;
+    f.log.push("The " + f.name + " hits you (" + tag + ") for " + dmg + " damage.");
+    if (v.hp <= 0 && v.race === "Tuskborn" && !v.relentlessUsed) {
+      v.hp = 1; v.relentlessUsed = true;
+      f.log.push("Relentless! You refuse to fall and cling to 1 Stamina.");
+    }
+  }
+  f.weak = 0; v.bracing = false; v.pressed = false; v.partyGuard = 0;
+};
+setup.act = function (kind) {
+  var v = State.variables, f = v.fight;
+  f.log = [];
+  f.round = (f.round || 0) + 1;
+  if (kind === "strike") {
+    setup.playerAttack({});
+  } else if (kind === "press") {
+    v.pressed = true;
+    f.log.push("You press the attack recklessly, leaving your defenses thin.");
+    setup.playerAttack({ dice: 2 });
+  } else if (kind === "brace") {
+    v.bracing = true;
+    f.log.push("You raise your guard and catch your breath, recovering " + setup.heal(1) + " Stamina.");
+  } else if (kind === "feat") {
+    v.sparks--;
+    switch (v.class) {
+      case "Blade": f.log.push("Cleaving Blow!"); setup.playerAttack({ dmg: 3 }); break;
+      case "Shadow": f.log.push("You slip past their guard..."); setup.playerAttack({ dice: 3, pierce: 1 }); break;
+      case "Spellwright": f.log.push("Raw force hammers your foe!"); setup.playerAttack({ ignoreGuard: true, dmg: 3 }); break;
+      case "Vowed": f.log.push("A whispered prayer mends your wounds. You recover " + setup.heal(4 + v.final.pre) + " Stamina."); break;
+      case "Wayfarer": f.log.push("You loose two arrows in one heartbeat!"); setup.playerAttack({}); if (f.hp > 0) setup.playerAttack({}); break;
+      case "Voice": f.hp -= 3; f.weak = 3; f.log.push("Your cutting word draws blood and rattles your foe: 3 damage, and they will attack with 3 fewer dice."); break;
+    }
+  } else if (kind === "breath") {
+    v.breath--; f.hp -= 4;
+    f.log.push("You exhale a gout of draconic fire for 4 damage that ignores Guard!");
+  } else if (kind === "potion") {
+    v.potions--;
+    f.log.push("You gulp a healing draught and recover " + setup.heal(setup.roll(1, 4) + 3) + " Stamina.");
+  }
+  v.partyBoost = 0;
+  if (f.hp > 0) setup.partyTurn();
+  if (f.hp > 0) setup.enemyTurn();
+};
+
+:: Story Stylesheet [stylesheet]
+body { background: #1a140e; color: #eadfc4; font-family: Georgia, "Times New Roman", serif; }
+#passages { max-width: 42rem; line-height: 1.55; }
+h1, h2, h3 { color: #e3b448; font-variant: small-caps; letter-spacing: .04em; }
+a, .macro-link, .link-internal { color: #e3b448; }
+a:hover, .macro-link:hover { color: #fff1c9; }
+#story-caption { font-size: .85em; }
+.opt { margin: .6em 0; padding: .4em .7em; border-left: 3px solid #6b4f1d; background: rgba(0,0,0,.25); }
+.opt small { color: #b8a880; }
+.check { border-left: 4px solid; padding: .3em .7em; margin: .7em 0; font-size: .88em; background: rgba(0,0,0,.3); }
+.check.pass { border-color: #6ab04c; }
+.check.fail { border-color: #c0392b; }
+.abrow { margin: .3em 0; }
+.ablabel { display: inline-block; width: 8em; }
+.abval { display: inline-block; width: 2em; text-align: center; font-size: 1.2em; }
+.abnote { margin-left: 1em; color: #b8a880; font-size: .9em; }
+.enemy { padding: .5em .8em; background: rgba(120,20,20,.35); border: 1px solid #7a2a2a; margin-bottom: .8em; }
+.log p { margin: .3em 0; }
+.actions .macro-link, .actions a { display: inline-block; margin: .2em .4em .2em 0; padding: .3em .8em; border: 1px solid #6b4f1d; border-radius: 4px; background: rgba(0,0,0,.3); }
+.dim { color: #7d7259; }
+table.sheet { border-collapse: collapse; margin: .6em 0; }
+table.sheet th, table.sheet td { border: 1px solid #4a3a1a; padding: .3em .7em; text-align: center; }
+.title-block { text-align: center; margin: 2em 0; }
+
+:: Widgets [widget]
+<<widget "chk">>
+<<set _w to setup.check($args[0], $args[1], $args[2])>>
+<<set _ok to _w.success>>
+<div @class="'check ' + (_w.success ? 'pass' : 'fail')"><<= _w.skill>> (<<= _w.attribute>> <<= _w.base>><<if _w.trained>> + Trained 2<</if>><<if _w.extra>> + <<= _w.extraLabel>> <<= _w.extra>><</if>><<if _w.pen>> - Dread <<= _w.pen>><</if>><<if _w.aid>> + Aid (<<= _w.aidName>>) 1<</if>> = <<= _w.n>> dice, need <<= _w.need>> <<= (_w.need > 1) ? "hits" : "hit">>): <<= _w.dice.join(" ")>> | Fate <<= _w.wild>><<if _w.note>> (<<= _w.note>>)<</if>> = <b><<= _w.hits>> <<= (_w.hits === 1) ? "hit" : "hits">></b>. <<if _w.success>>Success.<<else>>Failure.<</if>></div>
+<</widget>>
+
+<<widget "move">>
+<<set _dest to $args[0]>><<set _label to $args[1]>>
+<<capture _dest>>
+<<link _label>>
+<<run setup.step()>>
+<<if $dread gte 10>><<goto "DeepBroken">>
+<<elseif $hunt>><<set $huntDest to _dest>><<goto "DeepHunt">>
+<<else>><<goto _dest>><</if>>
+<</link>>
+<</capture>>
+<</widget>>
+
+<<widget "scare">>
+<<chk "pre" "Resolve" $args[0]>>
+<<if not _ok>>
+<<run setup.gainDread($args[1])>>
+<div class="check fail">Fear takes hold: <b>+<<= $args[1]>> Dread.</b></div>
+<<set _bn to setup.banter("dread")>><<if _bn>><p><i><<= _bn>></i></p><</if>>
+<</if>>
+<<if $dread gte 10>><<goto "DeepBroken">><</if>>
+<</widget>>
+
+<<widget "packlink">>
+<<link "Check your pack">><<set $packFrom to passage()>><<goto "DeepPack">><</link>>
+<</widget>>
+
+<<widget "camplink">>
+<<if $prov gte setup.campCost()>>
+<<link `"Make camp (" + setup.campCost() + (setup.campCost() > 1 ? " Provisions)" : " Provision)")`>><<set $campAt to passage()>><<run setup.camp()>><<if $hunt>><<set $huntDest to "DeepCamp">><<goto "DeepHunt">><<else>><<goto "DeepCamp">><</if>><</link>>
+<<else>>
+<span class="dim">No Provisions to camp with.</span>
+<</if>>
+<</widget>>
+
+<<widget "talklink">>
+<<set _npc to $args[0]>><<set _lbl to $args[1]>>
+<<capture _npc>>
+<<link _lbl>><<set $talkNpc to _npc>><<set $talkBack to passage()>><<goto "Talk">><</link>>
+<</capture>>
+<</widget>>
+
+<<widget "joinlink">>
+<<set _jid to $args[0]>><<set _jlbl to $args[1]>><<set _jback to $args[2]>>
+<<capture _jid, _jback>>
+<<link _jlbl>><<run setup.recruitStory(_jid)>><<set $joinBack to _jback>><<goto "PartyJoin">><</link>>
+<</capture>>
+<</widget>>
+
+<<widget "partylink">>
+<<link "Your party">><<set $partyBack to passage()>><<goto "Party">><</link>>
+<</widget>>
+
+<<widget "recruitlink">>
+<<set _rh to $args[0]>>
+<<capture _rh>>
+<<link "Visit the wanderers' table">><<set $recruitHub to _rh>><<set $recruitBack to passage()>><<goto "Recruit">><</link>>
+<</capture>>
+<</widget>>
+
+:: StoryInit
+<<set $name to "Adventurer">>
+<<set $race to "">>
+<<set $class to "">>
+<<set $bg to "">>
+<<set $extraSkill to "">>
+<<set $base to {vig:1, fin:1, wit:1, pre:1}>>
+<<set $points to 6>>
+<<set $final to null>>
+<<set $skills to []>>
+<<set $hp to 0>><<set $maxhp to 0>><<set $guard to 0>>
+<<set $gold to 0>><<set $potions to 0>><<set $sparks to 0>><<set $breath to 0>>
+<<set $relentlessUsed to false>>
+<<set $bracing to false>><<set $pressed to false>>
+<<set $inv to []>>
+<<set $fight to null>>
+<<set $checkpoint to "Start">>
+<<set $clues to 0>>
+<<set $tended to false>><<set $tracked to false>>
+<<set $sawTemple to false>><<set $sawTomas to false>><<set $sawDocks to false>>
+<<set $lantern to false>><<set $shortcut to false>>
+<<set $sneaked to false>><<set $bram to false>>
+<<set $sabotaged to false>><<set $gotDiscernment to false>>
+<<set $hallMethod to "">><<set $sabMethod to "">>
+<<set $bossDef to null>>
+<<set $atkBonus to 0>><<set $rank to 0>><<set $sigils to 0>>
+<<set $rift to {spore:false, ledger:false, silk:false, cistern:false}>>
+<<set $lair to "">><<set $lairMethod to "">><<set $foeHp to 0>>
+<<set $antitoxin to false>><<set $metCaptain to false>>
+<<set $idolCracked to false>><<set $vaultPeace to false>>
+<<set $crawling to false>><<set $light to 0>><<set $dread to 0>><<set $prov to 0>><<set $flasks to 0>><<set $salt to 0>>
+<<set $stir to 0>><<set $nextHunt to 6>><<set $moves to 0>><<set $hunt to false>><<set $huntDest to "">>
+<<set $depth to 1>><<set $seen to {}>><<set $survivor to false>><<set $knowsName to false>><<set $journal to false>><<set $chalk to false>>
+<<set $packFrom to "">><<set $campAt to "">><<set $deepMethod to "">><<set $foe to null>>
+<<set $party to []>><<set $trust to {}>><<set $talked to {}>><<set $campTalk to {}>>
+<<set $talkNpc to "">><<set $talkBack to "">><<set $topicText to []>><<set $topicNote to "">>
+<<set $partyBack to "">><<set $partyTalkId to "">><<set $partyTalkText to []>><<set $partyTalkNote to "">>
+<<set $recruitHub to "">><<set $recruitBack to "">><<set $joinMsg to "">><<set $joinBack to "">>
+<<set $partyGuard to 0>><<set $partyBoost to 0>><<set $leftNames to []>><<set $lastCampCost to 1>>
+<<set $maeveDeal to false>><<set $wolfWarn to false>><<set $holdMap to false>><<set $sabHelp to false>>
+<<set $hintLedger to false>><<set $hintCistern to false>><<set $hintSpore to false>><<set $hintSilk to false>>
+<<set $kessrickLore to false>><<set $vessWants to false>><<set $gateHint to false>><<set $saltDeal to false>>
+
+:: StoryCaption
+<<if $final>>
+<b><<= $name>></b><br>
+<<= $race>> <<= $class>><br>
+Stamina <<= $hp>>/<<= $maxhp>> &middot; Guard <<= $guard>><br>
+Crowns <<= $gold>> &middot; Draughts <<= $potions>><br>
+Sparks <<= $sparks>><<if $race is "Drakeblood">> &middot; Breath <<= $breath>><</if>>
+<<if $party.length>><br>Party: <<= $party.map(function (i) { return setup.companions[i].short; }).join(", ")>><</if>>
+<<if $crawling>>
+<br>Light <<= $light>> &middot; Dread <<= $dread>>/10<br>
+Provisions <<= $prov>> &middot; Flasks <<= $flasks>><br>
+<<set _f to Math.max(0, Math.min(6, 6 - ($nextHunt - $stir)))>>
+The Deep stirs: <<= "▮".repeat(_f) + "▯".repeat(6 - _f)>>
+<</if>>
+<</if>>
+
+:: Start
+<div class="title-block">
+<h1>Tales of the Western Reach</h1>
+<p><em>Three fantasy adventures for a single hero</em></p>
+</div>
+
+The Western Reach in autumn: cold rain on the King's Road, woodsmoke on the wind, and rumors of trouble in the river town of Brackenford. You are about to become part of one of those rumors.
+
+First, you must decide who you are.
+
+[[Create your character|Name]]
+
+:: Name
+<h2>Your name</h2>
+What are you called, traveler?
+
+<<textbox "$name" "Adventurer" "Race" autofocus>>
+
+[[Continue|Race]]
+
+:: Race
+<h2>Choose your lineage</h2>
+<<for _k, _r range setup.races>>
+<<capture _k>>
+<div class="opt"><<link _k>><<set $race to _k>><<goto "Class">><</link>> - <em><<= _r.summary>></em><br><small><<= _r.traits>></small></div>
+<</capture>>
+<</for>>
+
+:: Class
+<h2>Choose your calling</h2>
+<<for _k, _c range setup.classes>>
+<<capture _k>>
+<div class="opt"><<link _k>><<set $class to _k>><<goto "Background">><</link>> - <em><<= _c.summary>></em><br><small>Attacks with <<= setup.attributeNames[_c.atk]>> &middot; Armor <<= _c.armor>> &middot; Trained: <<= _c.skills.join(", ")>> &middot; Signature feat: <b><<= _c.feat>></b> (<<= _c.featDesc>>)</small></div>
+<</capture>>
+<</for>>
+
+:: Background
+<h2>Choose your past</h2>
+<<for _k, _b range setup.backgrounds>>
+<<capture _k>>
+<div class="opt"><<link _k>><<set $bg to _k>><<goto "ExtraSkill">><</link>> - <em><<= _b.summary>></em><br><small>Trained: <<= _b.skills.join(", ")>> &middot; Starting crowns: <<= _b.gold>></small></div>
+<</capture>>
+<</for>>
+
+:: ExtraSkill
+<h2>One more talent</h2>
+Every adventurer has a knack all their own. Pick one extra knack to be trained in. Trained knacks add 2 dice to your pool.
+
+<div class="actions">
+<<for _s range ["Perception", "Investigation", "Persuasion", "Discernment", "Stealth", "Acrobatics"]>>
+<<capture _s>>
+<<link _s>><<set $extraSkill to _s>><<set $base to {vig:1, fin:1, wit:1, pre:1}>><<set $points to 6>><<goto "Abilities">><</link>>
+<</capture>>
+<</for>>
+</div>
+
+:: Abilities
+<h2>Attributes</h2>
+Four Attributes describe what you are like. Each starts at 1, and its rating is the number of dice you roll. You have <b><<= $points>></b> points left to spend (no Attribute above 4 before lineage bonuses).
+
+<<for _a range setup.attributes>>
+<<capture _a>>
+<div class="abrow"><span class="ablabel"><<= setup.attributeNames[_a]>></span><<link "-">><<run setup.bump(_a, -1)>><<goto "Abilities">><</link>> <b class="abval"><<= $base[_a]>></b> <<link "+">><<run setup.bump(_a, 1)>><<goto "Abilities">><</link>><span class="abnote"><<= setup.attributeDesc[_a]>><<if setup.races[$race].bonus[_a]>> &middot; +<<= setup.races[$race].bonus[_a]>> from lineage = <b><<= Math.min(5, $base[_a] + setup.races[$race].bonus[_a])>></b><</if>></span></div>
+<</capture>>
+<</for>>
+
+<div class="actions">
+<<link `"Use the recommended " + $class + " build"`>><<run setup.applyRec()>><<goto "Abilities">><</link>>
+<<link "Finish character">><<run setup.finalize()>><<goto "Sheet">><</link>>
+</div>
+
+:: Sheet
+<h2><<= $name>></h2>
+<<= $race>> <<= $class>>, <<= $bg>>
+
+<table class="sheet">
+<tr><<for _a range setup.attributes>><th><<= setup.attributeNames[_a]>></th><</for>></tr>
+<tr><<for _a range setup.attributes>><td><<= $final[_a]>> dice</td><</for>></tr>
+</table>
+
+<b>Stamina</b> <<= $maxhp>> &middot; <b>Guard</b> <<= $guard>> &middot; <b>Sparks</b> <<= $sparks>> &middot; <b>Crowns</b> <<= $gold>>
+
+<b>Trained knacks (+2 dice):</b> <<= $skills.join(", ")>>
+
+<b>Gear:</b> <<= $inv.join(", ")>>, 2 healing draughts
+
+<b>Lineage:</b> <<= setup.races[$race].traits>>
+
+<b>Signature feat (costs 1 Spark):</b> <<= setup.classes[$class].feat>>, <<= setup.classes[$class].featDesc>>
+
+<h3>How the rules work</h3>
+To attempt something risky, roll a pool of six-sided dice equal to the relevant Attribute, plus 2 if you are Trained in the knack. Add one <b>Fate die</b>. Every die showing 4 or higher is a <b>hit</b>. A Fate 6 counts as two hits, but a Fate 1 cancels one. Harder tasks need more hits.
+
+In a fight, your hits beyond the foe's <b>Guard</b> become damage. Each round, choose a stance: <b>Strike</b>, <b>Press</b> (more dice, but lower Guard), <b>Brace</b> (higher Guard and a little healing), or spend a <b>Spark</b> on your calling's feat.
+
+Choose your adventure:
+
+[[The Silent Bell of Brackenford (a short story-driven quest)|Prologue]]
+[[The Weeping Rift (open-ended: explore a frontier ravine at your own pace)|RiftIntro]]
+[[The Lampless Deep (a horror dungeon crawl: manage Light, Dread and supplies)|DeepIntro]]
+
+[[Start over|Name]]
+
+:: Prologue
+The rain has followed you for three days along the King's Road. Toward dusk, you crest a rise and find a merchant wagon on its side in the mud, its canvas torn, its horses gone.
+
+A woman sits against a wheel, clutching her arm. Her cart bells, the little brass ones every caravan hangs from its harness, have all been cut away.
+
+"Thank the gods," she gasps. "Maeve Thornbrook, of Thornbrook & Daughters. Robed folk came out of the trees. They didn't say a word, they only hummed. They took my guards and every bell on the wagons, and left me alive to carry a warning."
+
+[[Kneel beside her|Wagon]]
+
+:: Wagon
+Maeve watches you with tired, hopeful eyes. The wreck and the road are still full of secrets.
+
+<<if not $tended>>[[Tend Maeve's wounds|WagonTend]]<<else>><span class="dim">You have tended Maeve's wounds.</span><</if>>
+<<if not $tracked>>[[Study the tracks around the wagon|WagonTracks]]<<else>><span class="dim">You have studied the tracks.</span><</if>>
+
+[[Help Maeve to Brackenford|Brackenford]]
+<<talklink "maeve" "Talk with Maeve">>
+
+:: WagonTend
+<<chk "wit" "Medicine" 1>>
+<<set $tended to true>>
+<<if _ok>>
+You clean and bind the wound with steady hands. Maeve sighs in relief. "You have a healer's touch. Take this, my last good vial."
+<<set $potions++>>
+You gain a healing draught.
+<<else>>
+Your bandaging is clumsy, and Maeve winces. She thanks you anyway, but you fear the wound will trouble her.
+<</if>>
+
+[[Back to the wagon|Wagon]]
+
+:: WagonTracks
+<<chk "wit" "Perception" 2>>
+<<set $tracked to true>>
+<<if _ok>>
+Among the churned mud you find bare footprints, dozens of them, all heading the same way: north-east, toward the old Dunvar ruins in the hills. At the edge of the road, someone scratched a sigil into a milestone: three rings, one inside another, like ripples from a bell.
+<<set $clues++>>
+<<else>>
+The rain has turned the ground to soup. You find nothing but mud and hoofprints, and the nagging feeling that you missed something.
+<</if>>
+
+[[Back to the wagon|Wagon]]
+
+:: Brackenford
+Brackenford sits on the banks of the River Sable, all timber walls, river mist, and lantern light. Maeve is passed to a healer's care. The guards at the gate look worried.
+
+It takes you a moment to notice why the town feels wrong. There are no bells. No temple bell ringing the evening hour, no harness bells on the market carts. Even the river ferry's brass bell has been silenced.
+
+Where will you go?
+
+[[The Temple of First Light|Temple]]
+[[The Gilded Heron (an inn)|Inn]]
+[[The market|Market]]
+[[The docks|Docks]]
+<<if $clues gte 2>>
+[[Leave for Dunvar Hold|Journey]]
+<<else>>
+<span class="dim">(You do not yet know enough to know where to look. Ask around.)</span>
+<</if>>
+<<talklink "maeve" "Visit Maeve at the healer's">>
+<<partylink>>
+
+:: Temple
+Brother Alden, a gaunt priest with ink-stained fingers, stands in the bell tower's shadow, staring at an empty frame where the great bell once hung.
+
+"Two nights ago it rang matins as always. By dawn it was gone. No rope cut, no door forced, and no one heard a thing."
+
+<<if not $sawTemple>>
+<<set $sawTemple to true>>
+<<if $class is "Vowed" or $bg is "Temple-raised">>
+He notices your faith and brightens. "A fellow servant! Take this, a blessing in a bottle, from our stores."
+<<set $potions++>>
+You gain a healing draught.
+<</if>>
+<<chk "wit" "Religion" 2>>
+<<if _ok>>
+You recognize the chalk sigil scrawled inside the tower: three rings within rings. "The Hollow Choir," you murmur. A heretic sect that believed a great bell could carry a voice to the gods, and was cast out from Brackenford a century ago.
+<<set $clues++>>
+<<else>>
+You study the strange rings chalked on the stones, but their meaning slips away from you.
+<</if>>
+<<else>>
+He has nothing more to tell you, but he thanks you for caring.
+<</if>>
+
+[[Return to town|Brackenford]]
+<<talklink "alden" "Talk with Brother Alden">>
+
+:: Inn
+The Gilded Heron is warm, crowded, and unusually quiet. A hush hangs over the drinkers, as if everyone were listening for a sound that never comes.
+
+<<if not $sawTomas>>[[Talk to Tomas, the stablehand|InnTomas]]<<else>><span class="dim">You have spoken with Tomas.</span><</if>>
+[[Rent a bed and rest (3 crowns)|InnRest]]
+[[Return to town|Brackenford]]
+<<recruitlink "bell">>
+<<partylink>>
+
+:: InnTomas
+Tomas, a lanky youth with worried eyes, keeps glancing at the door. He clearly knows something.
+
+[[Buy him a hot meal (2 crowns)|InnTomasBuy]]
+[[Coax the story out of him|InnTomasTalk]]
+[[Leave him be|Inn]]
+<<talklink "tomas" "Just chat with Tomas">>
+
+:: InnTomasBuy
+<<if $gold gte 2>>
+<<set $gold -= 2>><<set $sawTomas to true>><<set $clues++>>
+Tomas wolfs down the stew. "Two nights ago I was out with the horses and I saw them. Robed folk on the north road, humming, carrying a big black bell wrapped in sackcloth. They went toward Dunvar Hold, the old dwarven ruin in the hills. It's a week's walk by road, or a day by river if Old Corvin will take you."
+<<else>>
+You don't have enough gold.
+<</if>>
+
+[[Back|Inn]]
+
+:: InnTomasTalk
+<<chk "pre" "Persuasion" 1>>
+<<if _ok>>
+<<set $sawTomas to true>><<set $clues++>>
+Tomas leans in and whispers what he saw: robed figures on the north road, carrying a great black bell toward Dunvar Hold, the old dwarven ruin in the hills. "Old Corvin the boatman can get you there faster than the road."
+<<else>>
+Tomas clams up. "Ain't nothing to tell, stranger." You'll need a better approach, or a better meal.
+<</if>>
+
+[[Back|Inn]]
+
+:: InnRest
+<<if $gold gte 3>>
+<<set $gold -= 3>><<run setup.rest()>>
+You sleep soundly. When you wake, you are fully rested. Stamina and Sparks are restored.
+<<else>>
+You can't afford a bed.
+<</if>>
+
+[[Back|Inn]]
+
+:: Market
+The market is half empty. Stalls stand with awnings drawn and shopkeepers speak in low voices.
+
+<<set _pr to ($maeveDeal ? 6 : 8)>>
+<<if $gold gte _pr>>
+<<link `"Buy a healing draught (" + _pr + " crowns)"`>><<set $gold -= _pr>><<set $potions++>><<goto "Market">><</link>>
+<<else>>
+<span class="dim">Healing draught: <<= _pr>> crowns (you can't afford one).</span>
+<</if>>
+
+<<if not $lantern>>
+<<if $gold gte 2>>
+<<link "Buy a hooded lantern and oil (2 crowns)">><<set $gold -= 2>><<set $lantern to true>><<goto "Market">><</link>>
+<<else>>
+<span class="dim">Lantern and oil: 2 crowns.</span>
+<</if>>
+<<else>>
+<span class="dim">You already carry a lantern.</span>
+<</if>>
+
+You have <<= $gold>> crowns.
+
+[[Return to town|Brackenford]]
+
+:: Docks
+Old Corvin, a barge-master with a face like tanned leather, is mending nets on the quay. His ferry bell is missing too.
+
+<<if not $sawDocks>>
+<<set $sawDocks to true>>
+"Aye, I know Dunvar Hold. My grandfather ran salvage there when the dwarves still held it. There's an old landing on the river, a day upstream. I'll take you, if you don't mind the current."
+<<set $shortcut to true>><<set $clues++>>
+<<else>>
+"Ready when you are, friend. Just say the word."
+<</if>>
+
+[[Return to town|Brackenford]]
+<<talklink "corvin" "Talk with Old Corvin">>
+
+:: Journey
+<<set $checkpoint to "Journey">>
+Dunvar Hold lies in the hills north-east of town, a ruined dwarven hall swallowed by the wild. You can reach it two ways.
+
+[[Follow the old road on foot|WolfAmbush]]
+<<if $shortcut>>[[Take Old Corvin's boat upriver|RiverRoute]]<</if>>
+
+:: RiverRoute
+Old Corvin poles his flat barge upriver through the dawn mist, muttering a prayer with no bell to ring it.
+
+<<chk "vig" "Athletics" 2>>
+<<if _ok>>
+You lend your strength at the pole and the barge glides through the rapids. Corvin nods gruffly. "You've a river's patience."
+<<else>>
+The current slams the barge against a rock. You're thrown against the gunwale and lose a few Stamina.
+<<run setup.hurt(random(1, 4))>>
+<</if>>
+
+By evening, the ruined landing of Dunvar Hold looms ahead.
+
+[[Approach the gates|HoldGate]]
+
+:: WolfAmbush
+<<set $checkpoint to "WolfAmbush">>
+The road climbs into grey hills. You've walked half a day when something in the bracken snarls. A gaunt dire wolf pads out onto the road, ribs showing, eyes ringed with a strange pale light.
+
+You can't tell if it's hunting, or has been driven here by whatever is calling from the hold.
+
+<<link "Draw steel and fight!">><<run setup.startFight({name:"Starving Wolf", hp:($wolfWarn ? 8 : 11), guard:1, pool:4, dmg:2, loot:4, win:"HoldGate"})>><<goto "Combat">><</link>>
+
+:: Combat
+<<if $fight.hp lte 0>>
+<<goto "Victory">>
+<<elseif $hp lte 0>>
+<<goto "Defeat">>
+<<else>>
+<div class="enemy"><b><<= $fight.name>></b> &middot; Stamina <<= Math.max(0, $fight.hp)>>/<<= $fight.max>> &middot; Guard <<= $fight.guard>> &middot; Attacks with <<= $fight.pool>> dice</div>
+<<if $party.length>><div class="dim">Fighting beside you: <<= $party.map(function (i) { return setup.companions[i].short; }).join(", ")>></div><</if>>
+<div class="log"><<for _l range $fight.log>><p><<= _l>></p><</for>></div>
+<div class="actions">
+<<link `"Strike (" + setup.classes[$class].weapon + ")"`>><<run setup.act("strike")>><<goto "Combat">><</link>>
+<<link "Press (+2 dice, -1 Guard)">><<run setup.act("press")>><<goto "Combat">><</link>>
+<<link "Brace (+2 Guard, recover 1)">><<run setup.act("brace")>><<goto "Combat">><</link>>
+<<if $sparks gt 0>>
+<<link `setup.classes[$class].feat + " (1 Spark, " + $sparks + " left)"`>><<run setup.act("feat")>><<goto "Combat">><</link>>
+<<else>><span class="dim">[<<= setup.classes[$class].feat>>: no Sparks]</span><</if>>
+<<if $race is "Drakeblood" and $breath gt 0>>
+<<link "Breath Weapon">><<run setup.act("breath")>><<goto "Combat">><</link>>
+<</if>>
+<<if $potions gt 0>>
+<<link `"Drink a healing draught (" + $potions + " left)"`>><<run setup.act("potion")>><<goto "Combat">><</link>>
+<</if>>
+</div>
+<</if>>
+
+:: Victory
+<<for _l range $fight.log>><p><<= _l>></p><</for>>
+<p><b>The <<= $fight.name>> is defeated!</b></p>
+<<set _bv to setup.banter("victory")>><<if _bv>><p><i><<= _bv>></i></p><</if>>
+<<if $fight.loot gt 0>>
+<<set $gold += $fight.loot>>
+You find <<= $fight.loot>> crowns among its remains.
+<</if>>
+
+<<link "Continue">><<goto $fight.win>><</link>>
+
+:: Defeat
+<<if $crawling>>
+The world goes dark. You wake in the last place you rested, cold, hurt, and shaken. Whatever dragged you back took some of your supplies and a piece of your nerve.
+<<set $hp to Math.max(1, Math.floor($maxhp / 2))>>
+<<run setup.crawlSetback()>>
+<<set $fight to null>>
+<b>-1 Provision, -2 Light, +2 Dread.</b>
+<<else>>
+The world goes dark. You awaken later, bruised, robbed of a few coins, but alive. Something, or someone, dragged you clear.
+
+<<set $hp to Math.max(1, Math.floor($maxhp / 2))>>
+<<set $gold to Math.max(0, $gold - 5)>>
+<<set $fight to null>>
+<</if>>
+
+<<link "Rise and try again">><<goto $checkpoint>><</link>>
+
+:: HoldGate
+<<set $checkpoint to "HoldGate">>
+Dunvar Hold rises from the hillside, a great ruined gate of dwarven stone, half buried in moss and time. From inside comes a low, wordless hum that rattles your teeth and makes your bones ache.
+
+The great doors stand ajar. Beyond is darkness.
+
+[[Slip inside|HallOfEchoes]]
+
+:: HallOfEchoes
+The gate opens onto a long hall of carved pillars. The hum is stronger here, and it echoes strangely, as if every stone were a throat.
+
+<<if setup.races[$race].dark or $lantern>>
+<<if setup.races[$race].dark>>Your nightsight picks out the hall in shades of grey.<<else>>Your lantern throws warm light across the pillars.<</if>>
+<<else>>
+You have no light at all. You barely take three steps before you bark your shin on a fallen column and lose some Stamina.
+<<run setup.hurt(random(1, 4))>>
+<</if>>
+
+Ahead, the floor is a checkerboard of stone plates, some worn, some new. Beyond them, a door glows faintly.
+
+How do you cross?
+
+<<link "Study the plates (Investigation)">><<set $hallMethod to "Investigation">><<goto "HallSolve">><</link>>
+<<link "Read the dwarven runes on the pillars (History)">><<set $hallMethod to "History">><<goto "HallSolve">><</link>>
+<<link "Leap across, plate to plate (Acrobatics)">><<set $hallMethod to "Acrobatics">><<goto "HallSolve">><</link>>
+
+:: HallSolve
+<<if $hallMethod is "Investigation">>
+<<set _n to Math.max(1, 2 - ($holdMap ? 1 : 0))>><<chk "wit" "Investigation" _n>>
+<<if _ok>>You notice that only some plates are worn smooth by centuries of dwarven boots. The others are bright and new, and wired to something below. You step carefully on the worn ones.<</if>>
+<<elseif $hallMethod is "History">>
+<<set _n to Math.max(1, 2 - ($holdMap ? 1 : 0))>><<chk "wit" "History" _n>>
+<<if _ok>>You read the runes: "Where stone is worn, the wise may walk." You match them to the plates and cross safely.<</if>>
+<<else>>
+<<set _n to Math.max(1, 3 - ($holdMap ? 1 : 0))>><<chk "fin" "Acrobatics" _n>>
+<<if _ok>>You vault from plate to plate, barely touching each one. Nothing triggers.<</if>>
+<</if>>
+
+<<if not _ok>>
+Your foot lands on the wrong plate. Click. A volley of poisoned darts hisses out of the pillars!
+<<set _d to random(1, 6)>>
+<<if $race is "Dwarf">><<set _d to Math.ceil(_d / 2)>>Your dwarven constitution shrugs off some of the poison.<</if>>
+You take <<= _d>> damage.
+<<run setup.hurt(_d)>>
+<</if>>
+
+You reach the glowing door at the far end of the hall.
+
+[[Open it|Chapel]]
+
+:: Chapel
+<<set $checkpoint to "Chapel">>
+Beyond the door lies a vaulted chapel, once a dwarven shrine to a smith-god. Now, two robed figures stand before an altar, humming in perfect unison. Their mouths do not move. The sound comes from somewhere else.
+
+Behind them, a side door leads deeper into the hold. On a hook near you hangs a spare grey robe.
+
+<<link "Attack them head-on!">><<goto "ChapelFight">><</link>>
+<<link "Sneak along the wall (Stealth)">><<goto "ChapelSneak">><</link>>
+<<link "Put on the robe and walk past (Deception)">><<goto "ChapelDisguise">><</link>>
+
+:: ChapelSneak
+<<chk "fin" "Stealth" 2>>
+<<if _ok>>
+<<set $sneaked to true>>
+You slip along the shadows of the wall, holding your breath. The Acolytes never turn. You reach the side door and ease it open.
+
+[[Go through|Cells]]
+<<else>>
+A boot scrapes on stone. The humming stops. Two heads turn as one.
+
+[[Fight!|ChapelFight]]
+<</if>>
+
+:: ChapelDisguise
+<<chk "pre" "Deception" 3>>
+<<if _ok>>
+<<set $sneaked to true>>
+You pull the robe over your head, adopt a slow, swaying gait, and hum tunelessly. One Acolyte tilts its head at you, then goes back to its song. You slip through the side door.
+
+[[Go through|Cells]]
+<<else>>
+Your hum is off-key. The Acolytes stop and stare. One slowly points a finger at you.
+
+[[Fight!|ChapelFight]]
+<</if>>
+
+:: ChapelFight
+<<set $checkpoint to "Chapel">>
+The Choir Acolytes turn together, and the hum becomes a shriek. Their eyes are hollow, their mouths sewn shut.
+
+<<link "Steel yourself and fight!">><<run setup.startFight({name:"Choir Acolytes", hp:16, guard:1, pool:4, dmg:2, loot:6, win:"Cells"})>><<goto "Combat">><</link>>
+
+:: Cells
+<<set $checkpoint to "Cells">>
+Beyond the chapel, iron-barred cells line a low tunnel. In the last cell, a broad-shouldered man in a caravan guard's tabard sits with his head in his hands.
+
+"Sergeant Bram Holloway," he croaks. "Thornbrook's guard. The rest are... I can't hear them anymore. They took our voices, friend. Right out of our throats."
+
+<<if not $bram>>
+You break the lock. Bram climbs to his feet, retrieves a discarded sword, and pledges to stand beside you.
+<<set $bram to true>>
+He binds your wounds with a healer's kit.
+<<run setup.heal(Math.ceil(($maxhp - $hp) / 2))>>
+<</if>>
+
+"The Choirmaster keeps the Hollow Bell in the chamber below," Bram whispers. "It's the source of the hum. He's been feeding it voices."
+
+[[Descend to the Bell Chamber|BellChamber]]
+<<talklink "bram" "Talk with Bram">>
+<<if $party.indexOf("bram") lt 0>><<joinlink "bram" "Ask Bram to fight beside you" "Cells">><<else>><span class="dim">Bram is with you.</span><</if>>
+
+:: BellChamber
+<<set $checkpoint to "BellChamber">>
+The stairs open onto a cavernous shrine. At its heart hangs the Hollow Bell, black as a pit, taller than a man. It hums without being struck, and each pulse of sound makes your chest ache.
+
+Beneath it stands a tall, thin man in tattered priest's robes. He turns as you enter. His face is calm, and his eyes are wet with tears.
+
+"Ah," says Choirmaster Veyle, and his voice is a whisper, a ruin. "More voices."
+
+<<if $bram>>Sergeant Bram stands at your shoulder, sword drawn, jaw clenched.<</if>>
+
+How do you face him?
+
+<<if not $gotDiscernment>>
+<<link "Read his face (Discernment)">><<goto "BossDiscernment">><</link>>
+<<else>>
+<span class="dim">You understand his grief.</span>
+<</if>>
+<<link "Speak to him (Persuasion)">><<goto "BossParley">><</link>>
+<<if not $sabotaged>>
+<<link "Sabotage the bell with Occult">><<set $sabMethod to "Occult">><<goto "BossSabotage">><</link>>
+<<link "Sabotage the bell with Religion">><<set $sabMethod to "Religion">><<goto "BossSabotage">><</link>>
+<<link "Topple the bell by force (Athletics)">><<set $sabMethod to "Athletics">><<goto "BossSabotage">><</link>>
+<<else>>
+<span class="dim">The bell's hum is fractured and weak.</span>
+<</if>>
+<<link "Attack the Choirmaster!">><<goto "BossFight">><</link>>
+<<talklink "veyle" "Speak with Veyle before you decide">>
+
+:: BossDiscernment
+<<chk "wit" "Discernment" 2>>
+<<set $gotDiscernment to true>>
+<<if _ok>>
+You see it plainly. Veyle was once a bell-warden of this hold's shrine. He lost his own voice to some old grief, and the bell offered him a way to hear a voice again, even if it wasn't his own. He isn't cruel. He is a lonely, broken man who cannot stop.
+<<else>>
+His face is a mask of calm. You sense only sorrow, deep and old, but not its cause.
+<</if>>
+
+[[Return|BellChamber]]
+
+:: BossParley
+<<if $gotDiscernment>><<set _dc to 2>><<else>><<set _dc to 4>><</if>>
+<<chk "pre" "Persuasion" _dc>>
+<<if _ok>>
+You lower your weapon and speak: not of justice, but of what he has lost, and what he is doing to others. Veyle's shoulders slump. The hum stutters.
+
+[[Continue|EndPeace]]
+<<else>>
+Veyle listens, then shakes his head sadly. "Kind words, but the Choir is never silent. Please forgive me."
+
+The Hollow Bell surges.
+
+[[Defend yourself!|BossFight]]
+<</if>>
+
+:: BossSabotage
+<<if $sabMethod is "Occult">>
+<<set _n to Math.max(1, 2 - ($sabHelp ? 1 : 0))>><<chk "wit" "Occult" _n>>
+<<if _ok>>You trace the bell's runes. They are a weave of resonance and binding. One sharp counter-note unravels the knot at its core.<</if>>
+<<elseif $sabMethod is "Religion">>
+<<set _n to Math.max(1, 2 - ($sabHelp ? 1 : 0))>><<chk "wit" "Religion" _n>>
+<<if _ok>>You recall the old rites for silencing a tainted bell. You speak the words of quieting, and the metal shudders.<</if>>
+<<else>>
+<<set _n to Math.max(1, 3 - ($sabHelp ? 1 : 0))>><<chk "vig" "Athletics" _n>>
+<<if _ok>>You wedge your shoulder against the great bell and heave. Ancient chains groan, and it slips its mount, crashing against the wall.<</if>>
+<</if>>
+
+<<if _ok>>
+<<set $sabotaged to true>>
+A great crack runs through the Hollow Bell. Its hum warbles, cracks, and fades to a dull throb. Veyle cries out and staggers.
+
+"What have you done?"
+
+[[Return|BellChamber]]
+<<else>>
+<<run setup.hurt(random(1, 6))>>
+The bell answers with a shriek that shakes your skull. You lose a few Stamina as Veyle draws himself up.
+
+[[Face him|BossFight]]
+<</if>>
+
+:: BossFight
+<<set $checkpoint to "BellChamber">>
+<<set $bossDef to {name:"Choirmaster Veyle", hp:26, guard:2, pool:5, dmg:2, loot:0, win:"EndShatter"}>>
+<<if $sabotaged>><<set $bossDef.hp to 18>><<set $bossDef.guard to 1>><<set $bossDef.pool to 4>><</if>>
+<<if $bram>><<set $bossDef.pool to $bossDef.pool - 1>><</if>>
+
+Veyle raises his hands. The Hollow Bell resonates, and the air itself vibrates with his stolen voices.
+
+<<if $sabotaged>>The cracked bell can barely amplify him. He seems weakened.<</if>>
+<<if $bram>>Sergeant Bram charges in beside you, drawing Veyle's attention.<</if>>
+
+<<link "Fight the Choirmaster!">><<run setup.startFight($bossDef)>><<goto "Combat">><</link>>
+
+:: EndPeace
+Choirmaster Veyle lets his hands fall. "I only wanted... to hear again."
+
+He steps to the bell and lays a trembling palm on it. With a sound like a sigh, the Hollow Bell cracks from crown to lip, and a thousand stolen voices rush out through the stone. In the cells above, the captured guards gasp, weep, laugh. Bram lets out a roar that shakes the cavern.
+
+Veyle sinks to his knees, and after a long moment, he speaks in a small, cracked, but wholly his own voice. "Thank you."
+
+[[Return to Brackenford|TheEnd]]
+
+:: EndShatter
+Choirmaster Veyle falls beside the Hollow Bell. As his last breath leaves him, the black bell shatters, and a thousand stolen voices burst out through the stone in a rush like a thunderclap.
+
+<<if $sabotaged>>The bell was already broken, and now it is only scrap and silence.<</if>>
+
+In the cells above, the captured guards gasp, weep, laugh. <<if $bram>>Bram lets out a roar that shakes the cavern.<</if>> The hum is gone at last.
+
+[[Return to Brackenford|TheEnd]]
+
+:: TheEnd
+You return to Brackenford at dawn with the rescued caravan guards in tow. At the temple, Brother Alden hangs a small brass bell from the empty tower frame, one salvaged from Maeve's wrecked wagon, and gives it a tug.
+
+Ding.
+
+Every bell in Brackenford answers. The ferry, the harness bells, the temple, all ringing at once, as if the town were remembering how to sing. Maeve Thornbrook weeps in the market square. Old Corvin takes off his cap.
+
+The people of Brackenford cheer your name, <<= $name>>.
+
+<<set $gold += 50>>
+Maeve presses a purse into your hands: 50 crowns, and a promise that Thornbrook & Daughters will always carry your goods for free.
+
+<<for _be range setup.banterAll("end")>><p><i><<= _be>></i></p><</for>>
+<h2>The End</h2>
+<p><em><<= $name>>, <<= $race>> <<= $class>>. Stamina <<= $hp>>/<<= $maxhp>>, <<= $gold>> crowns.</em></p>
+
+<<link "Play again">><<run Engine.restart()>><</link>>
+
+:: RiftIntro
+The frontier road ends at Thornwatch Keep, a squat ring of grey towers on a windswept ridge, the last stone wall between the Western Reach's farmland and the wild hills.
+
+Beyond the keep, the land splits open. The Weeping Rift is a mile-long ravine, its walls pocked with cave mouths and slick with seeping water. For decades it was empty. Now, patrols that ride into it do not ride out. Herders swear the caves glow at night, and the wind carries howls, chanting, and something like distant hammering.
+
+The keep's Warden-Captain is paying coin to anyone who will look into it.
+
+[[Enter the keep|RiftKeep]]
+
+:: RiftKeep
+<<set $checkpoint to "RiftKeep">>
+Thornwatch Keep bustles with the wary energy of a place under quiet siege. Soldiers drill in the yard, traders haggle over the price of lamp oil, and every eye keeps drifting toward the ravine.
+
+<<if $sigils gt 0>>You carry <<= $sigils>> of the Rift's four ash-black sigil stones.<</if>>
+
+[[Warden-Captain Marrow's hall|RiftCaptain]]
+[[The Traders' Yard|RiftShop]]
+[[The Broken Shield (tavern)|RiftTavern]]
+[[Ride out to the Weeping Rift|RiftRavine]]
+<<partylink>>
+
+:: RiftCaptain
+Warden-Captain Isolde Marrow, a weathered woman with a scar across her jaw, studies a map with four cave mouths circled in red.
+
+<<if not $metCaptain>>
+<<set $metCaptain to true>>
+"Something in the Rift is stirring the monsters up. I count four lairs that matter. Clear them, or make peace with them, I don't care which. Whatever you find, bring back anything that looks like ash-black stone. My scouts say these 'sigils' are keys to something buried at the ravine's end."
+
+She hands you a sealed flask and a purse. "For your trouble. Come back alive."
+<<set $potions++>><<set $gold += 10>>
+You gain a healing draught and 10 crowns.
+<<else>>
+"Back already? Tell me what you've found."
+<</if>>
+
+<<if $sigils gte 3>>
+She turns a sigil in her fingers. "Three of them fit the pattern of the vault door. The Rift's heart is open to you. Whoever is behind this, end it."
+<<elseif $sigils gt 0>>
+"Good work. Keep looking. I think three sigils will unlock the vault door at the ravine's end."
+<</if>>
+
+[[Leave|RiftKeep]]
+<<talklink "marrow" "Talk with the Warden-Captain">>
+
+:: RiftTavern
+The Broken Shield is loud and low-ceilinged. Innkeeper Hessa Brindle wipes a mug and listens to everything.
+
+Rumors circulating tonight:
+<<if not $rift.spore>>* Villagers went missing near the glowing cave. They came back different, and didn't know their own names.<</if>>
+<<if not $rift.ledger>>* A deserter company calling itself the Crimson Ledger has fortified a cave and taxes anyone who passes.<</if>>
+<<if not $rift.silk>>* Something with too many legs has been dragging livestock into a cave hung with silk.<</if>>
+<<if not $rift.cistern>>* An old hag lives in the flooded cistern under the cliff. She trades favors, for a price.<</if>>
+
+<<if $gold gte 3>>
+<<link "Rent a bed and rest (3 crowns)">><<set $gold -= 3>><<run setup.rest()>><<goto "RiftTavern">><</link>>
+<<else>>
+<span class="dim">A bed costs 3 crowns.</span>
+<</if>>
+
+[[Leave|RiftKeep]]
+<<talklink "hessa" "Talk with Hessa">>
+<<recruitlink "rift">>
+<<partylink>>
+
+:: RiftShop
+The Traders' Yard smells of tar and rope. You have <<= $gold>> crowns.
+
+<<if $gold gte 8>><<link "Healing draught (8 crowns)">><<set $gold -= 8>><<set $potions++>><<goto "RiftShop">><</link>><<else>><span class="dim">Healing draught: 8 crowns.</span><</if>>
+<<if not $lantern>><<if $gold gte 2>><<link "Hooded lantern and oil (2 crowns)">><<set $gold -= 2>><<set $lantern to true>><<goto "RiftShop">><</link>><<else>><span class="dim">Lantern and oil: 2 crowns.</span><</if>><<else>><span class="dim">You carry a lantern.</span><</if>>
+<<if not $antitoxin>><<if $gold gte 5>><<link "Antitoxin vial (5 crowns)">><<set $gold -= 5>><<set $antitoxin to true>><<goto "RiftShop">><</link>><<else>><span class="dim">Antitoxin vial: 5 crowns.</span><</if>><<else>><span class="dim">You carry an antitoxin vial.</span><</if>>
+
+[[Leave|RiftKeep]]
+
+:: RiftRavine
+The Weeping Rift yawns before you. Water seeps down its walls in thin, glittering threads, and the wind carries a low, uneasy murmur. Four cave mouths dominate the ravine.
+
+<<if not $rift.spore>>[[The green glow: the Sporegrotto|RiftSpore]]<<else>><span class="dim">The Sporegrotto is quiet.</span><</if>>
+<<if not $rift.ledger>>[[The walled cave with banners: the Crimson Ledger|RiftLedger]]<<else>><span class="dim">The Crimson Ledger's camp is empty.</span><</if>>
+<<if not $rift.silk>>[[The silk-hung cave: the Silk Galleries|RiftSilk]]<<else>><span class="dim">The Silk Galleries are cold.</span><</if>>
+<<if not $rift.cistern>>[[The flooded cave: the Brine Cistern|RiftCistern]]<<else>><span class="dim">The Brine Cistern is still.</span><</if>>
+
+<<if $sigils gte 3>>
+[[The sealed vault at the ravine's end|RiftVault]]
+<<else>>
+<span class="dim">At the ravine's far end, a door of ash-black stone waits. It needs three sigils.</span>
+<</if>>
+
+[[Return to the keep|RiftKeep]]
+
+:: RiftSpore
+<<set $checkpoint to "RiftSpore">><<set $lair to "spore">>
+The cave mouth pulses with pale green light. Inside, hollow-eyed figures sway in a carpet of luminous fungus, herders and villagers, their skin dusted with spores, their mouths bloomed with pale caps. They do not speak. They do not seem to blink.
+
+Something old and hungry is growing here, and it has a sigil buried at its core.
+
+<<link "Cover your face and cut through the spores (Survival)">><<set $lairMethod to "Survival">><<goto "RiftSporeResolve">><</link>>
+<<link "Study the fungus for a weakness (Medicine)">><<set $lairMethod to "Medicine">><<goto "RiftSporeResolve">><</link>>
+<<if $lantern>><<link "Burn the growth with lantern oil">><<set $lairMethod to "Fire">><<goto "RiftSporeResolve">><</link>><</if>>
+
+:: RiftSporeResolve
+<<if $lairMethod is "Survival">>
+<<chk "wit" "Survival" 2>>
+<<elseif $lairMethod is "Medicine">>
+<<chk "wit" "Medicine" 2>>
+<<else>>
+<<set _ok to true>>
+You hurl burning oil across the cavern floor. The fungus screams, a sound like wet paper tearing, and the spore clouds thin.
+<</if>>
+<<if _ok>>
+<<set $foeHp to 8 - ($hintSpore ? 2 : 0)>>
+You find the weak point: the spores thin in the moving air, and the infected creatures move slowly. When they turn on you, they are already faltering.
+<<else>>
+<<set $foeHp to 13 - ($hintSpore ? 2 : 0)>>
+<<run setup.hurt(random(1, 4))>>
+Spores burst around you and you choke, losing a few Stamina. The infected turn as one.
+<</if>>
+
+<<link "Fight!">><<run setup.startFight({name:"Sporebound Wanderers", hp:$foeHp, guard:0, pool:3, dmg:1, loot:8, win:"RiftLairWin"})>><<goto "Combat">><</link>>
+
+:: RiftLedger
+<<set $checkpoint to "RiftLedger">><<set $lair to "ledger">>
+A palisade of sharpened logs seals a cave mouth, red banners snapping above it. This is the camp of the Crimson Ledger, deserters and sellswords who broke their contracts and now tax the ravine. Their captain, Harl Vess, lounges on a barrel, a black sigil stone hanging from his belt like a trophy.
+
+"Toll's five gold," he calls. "Or a good reason."
+
+<<link "Bargain with him (Persuasion)">><<set $lairMethod to "Persuasion">><<goto "RiftLedgerResolve">><</link>>
+<<link "Stare him down (Intimidation)">><<set $lairMethod to "Intimidation">><<goto "RiftLedgerResolve">><</link>>
+<<link "Slip in after dark and steal the sigil (Stealth)">><<set $lairMethod to "Stealth">><<goto "RiftLedgerResolve">><</link>>
+<<link "Refuse the toll and draw steel">><<set $lairMethod to "Fight">><<goto "RiftLedgerResolve">><</link>>
+<<talklink "vess" "Talk with Harl Vess">>
+
+:: RiftLedgerResolve
+<<if $lairMethod is "Persuasion">>
+<<set _n to Math.max(1, 3 - (($hintLedger ? 1 : 0) + ($vessWants ? 1 : 0)))>><<chk "pre" "Persuasion" _n>>
+<<elseif $lairMethod is "Intimidation">>
+<<set _n to Math.max(1, 2 - ($vessWants ? 1 : 0))>><<chk "pre" "Intimidation" _n>>
+<<elseif $lairMethod is "Stealth">>
+<<chk "fin" "Stealth" 2>>
+<<else>>
+<<set _ok to false>>
+<</if>>
+<<if _ok>>
+<<if $lairMethod is "Persuasion">>
+Vess laughs and tosses you the stone. "The Ledger's contract was with the keep, and the keep never paid. Tell Marrow we'll go quietly, for a fair price." His company files out of the cave.
+<<elseif $lairMethod is "Intimidation">>
+Your stare lands like a hammer. Vess's grin dies. "Fine. Take your rock. The Ledger's leaving." His people pack up in sullen silence.
+<<else>>
+You slip between sentries, lift the sigil from Vess's belt as he snores, and vanish into the dark before anyone wakes.
+<</if>>
+
+<<if $lairMethod isnot "Stealth">>
+<<joinlink "vess" "Offer Vess a paid contract with you" "RiftLairWin">>
+<</if>>
+[[Take the sigil|RiftLairWin]]
+<<else>>
+<<if $lairMethod isnot "Fight">>Your plan goes wrong. Vess's grin sours.<</if>>
+"Then it's steel." The Ledger draws weapons.
+
+<<link "Fight the Crimson Ledger!">><<run setup.startFight({name:"Ledger Captain Harl Vess", hp:20, guard:2, pool:5, dmg:2, loot:14, win:"RiftLairWin"})>><<goto "Combat">><</link>>
+<</if>>
+
+:: RiftSilk
+<<set $checkpoint to "RiftSilk">><<set $lair to "silk">>
+A cave hung floor to ceiling with pale silk. Cocooned shapes, cattle and one soldier's gauntlet, dangle from the webs. A dry, clicking sound comes from the dark. Half-buried in the nest, a black sigil stone gleams.
+
+<<link "Read the web patterns for weak strands (Perception)">><<set $lairMethod to "Perception">><<goto "RiftSilkResolve">><</link>>
+<<link "Hack a path with brute force (Athletics)">><<set $lairMethod to "Athletics">><<goto "RiftSilkResolve">><</link>>
+<<if $lantern>><<link "Burn the webs with lantern oil">><<set $lairMethod to "Fire">><<goto "RiftSilkResolve">><</link>><</if>>
+
+:: RiftSilkResolve
+<<if $lairMethod is "Perception">>
+<<chk "wit" "Perception" 2>>
+<<elseif $lairMethod is "Athletics">>
+<<chk "vig" "Athletics" 2>>
+<<else>>
+<<set _ok to true>>
+Flame races along the silk, and the cave fills with smoke and clicking shrieks.
+<</if>>
+<<if _ok>>
+<<set $foeHp to 10 - ($hintSilk ? 2 : 0)>>
+You cut the anchor strands and drop the nest's canopy. The Silk-Weaver scuttles out half-tangled.
+<<else>>
+<<set $foeHp to 16 - ($hintSilk ? 2 : 0)>>
+<<run setup.hurt(random(1, 4))>>
+You blunder into the sticky lines and lose a few Stamina tearing free. The Silk-Weaver drops from the ceiling.
+<</if>>
+<<if $antitoxin>>Your antitoxin vial should dull its venom.<</if>>
+
+<<link "Fight!">><<run setup.startFight({name:"Silk-Weaver", hp:$foeHp, guard:1, pool:5, dmg:($antitoxin ? 2 : 3), loot:10, win:"RiftLairWin"})>><<goto "Combat">><</link>>
+
+:: RiftCistern
+<<set $checkpoint to "RiftCistern">><<set $lair to "cistern">>
+Stairs of slick stone descend into a flooded cistern. Candles float on the black water, and on a rotting throne of driftwood sits Marga Crow, an old hag with river-weed hair and pearl-white eyes. A black sigil hangs in her necklace of bones.
+
+"A visitor. Come, come. Everything has a price."
+
+<<if $gold gte 10>><<link "Pay her 10 crowns">><<set $gold -= 10>><<set $lairMethod to "Pay">><<goto "RiftCisternResolve">><</link>><</if>>
+<<link "Haggle with her (Persuasion)">><<set $lairMethod to "Persuasion">><<goto "RiftCisternResolve">><</link>>
+<<link "Threaten her (Intimidation)">><<set $lairMethod to "Intimidation">><<goto "RiftCisternResolve">><</link>>
+<<link "Attack the hag">><<set $lairMethod to "Fight">><<goto "RiftCisternResolve">><</link>>
+<<talklink "marga" "Talk with Marga Crow">>
+
+:: RiftCisternResolve
+<<if $lairMethod is "Pay">>
+<<set _ok to true>>
+<<elseif $lairMethod is "Persuasion">>
+<<set _n to Math.max(1, 3 - ($hintCistern ? 1 : 0))>><<chk "pre" "Persuasion" _n>>
+<<elseif $lairMethod is "Intimidation">>
+<<set _n to Math.max(1, 3 - ($hintCistern ? 1 : 0))>><<chk "pre" "Intimidation" _n>>
+<<else>>
+<<set _ok to false>>
+<</if>>
+<<if _ok>>
+Marga Crow cackles and unclasps the sigil from her necklace. "A fair trade. Take it, and take this too, dearie, for being polite." She presses a vial into your hand.
+<<set $potions++>>
+You gain a healing draught.
+
+[[Take the sigil|RiftLairWin]]
+<<else>>
+<<if $lairMethod isnot "Fight">>Marga Crow's smile stretches too wide. "Rude."<</if>>
+The candles gutter and the water rises around her. She rises, dripping.
+
+<<link "Fight the Cistern Hag!">><<run setup.startFight({name:"Cistern Hag", hp:20, guard:1, pool:5, dmg:2, loot:15, win:"RiftLairWin"})>><<goto "Combat">><</link>>
+<</if>>
+
+:: RiftLairWin
+<<if $lair is "spore">>
+In the heart of the grotto you find a black sigil stone wrapped in fungal threads. As you lift it, the glow fades, and the spore-cursed wanderers slump gently to the floor, blinking, alive, and themselves again.
+<<elseif $lair is "ledger">>
+The Crimson Ledger's camp is yours. Vess's black sigil stone is in your hand.
+<<elseif $lair is "silk">>
+You cut the sigil stone from the Silk-Weaver's nest. The dry clicking in the dark has stopped.
+<<else>>
+The Brine Cistern falls quiet. The sigil is yours.
+<</if>>
+
+<<set $rift[$lair] to true>>
+<<set $sigils++>>
+<<run setup.rank()>>
+<<set $gold += 12>>
+You gain 12 crowns, a sigil stone (<<= $sigils>>/4), and grow more seasoned. <b>Rank <<= $rank>></b>: +3 max Stamina<<if $rank % 2 is 0>>, +1 attack die<</if>>.
+
+<<if $sigils gte 3>>The sigils in your pack thrum in unison. The vault at the ravine's end can be opened.<</if>>
+
+[[Return to the Rift|RiftRavine]]
+
+:: RiftVault
+<<set $checkpoint to "RiftVault">>
+The sigils slot into the ash-black door one by one, and it swings inward on a breath of warm, sulfurous air.
+
+Beyond lies a great hall of burnt stone. At its center, on a dais of cinders, burns the Ember Idol: a twisted iron brazier taller than a man, wreathed in soot-black flame. Around it, monsters from every lair in the Rift crouch and whisper, and before it kneels a priest in charred vestments.
+
+"The keep's old chaplain," he says without turning. "Kessrick. Once I tended the dawn lamp. Now I feed the ember, and the ember feeds the Rift. It promised me the dark would never take my flock again."
+
+<<if $sigils lt 4>><span class="dim">A fourth sigil socket in the door stands empty. The idol's hold is stronger for it.</span><</if>>
+
+<<link "Speak to him (Persuasion)">><<goto "RiftVaultParley">><</link>>
+<<if not $idolCracked>>
+<<link "Sabotage the idol with Occult">><<set $lairMethod to "Occult">><<goto "RiftVaultSabotage">><</link>>
+<<link "Sabotage the idol with Religion">><<set $lairMethod to "Religion">><<goto "RiftVaultSabotage">><</link>>
+<<else>>
+<span class="dim">The idol's flame gutters, cracked.</span>
+<</if>>
+<<link "Attack Kessrick!">><<goto "RiftVaultFight">><</link>>
+<<talklink "kessrick" "Speak with Kessrick">>
+
+:: RiftVaultParley
+<<if $sigils gte 4>><<set _dc to 2>><<else>><<set _dc to 3>><</if>>
+<<if $kessrickLore>><<set _dc to Math.max(1, _dc - 1)>><</if>>
+<<chk "pre" "Persuasion" _dc>>
+<<if _ok>>
+<<set $vaultPeace to true>>
+You speak of the dawn lamp he once tended, and the flock that trusted him. Kessrick's shoulders shake. "It never promised light. Only ash." He rises, hands trembling, and lays his palm on the idol. The flame gutters, and dies.
+
+[[Continue|RiftEnd]]
+<<else>>
+Kessrick shakes his head. "Too late. The ember has me." The idol roars, and the monsters rise.
+
+[[Defend yourself!|RiftVaultFight]]
+<</if>>
+
+:: RiftVaultSabotage
+<<if $lairMethod is "Occult">><<chk "wit" "Occult" 2>><<else>><<chk "wit" "Religion" 2>><</if>>
+<<if _ok>>
+<<set $idolCracked to true>>
+You find the idol's binding, a knot of ember and stolen prayer, and pull it loose. The black flame flares and shrinks, and Kessrick cries out as if struck.
+
+[[Return|RiftVault]]
+<<else>>
+<<run setup.hurt(random(1, 6))>>
+Hot ash blasts across your face, and you lose a few Stamina as Kessrick rises to face you.
+
+[[Fight!|RiftVaultFight]]
+<</if>>
+
+:: RiftVaultFight
+<<set $checkpoint to "RiftVault">>
+<<set $bossDef to {name:"Ash-Priest Kessrick", hp:32, guard:2, pool:6, dmg:3, loot:0, win:"RiftEnd"}>>
+<<set $bossDef.hp to Math.max(16, 32 - 3 * $sigils - ($idolCracked ? 5 : 0))>>
+<<set $bossDef.pool to 6 - Math.floor($sigils / 2)>>
+
+Kessrick lifts a hand and the Ember Idol answers, spilling black fire along the floor.
+
+<<if $idolCracked>>The cracked idol gutters, and Kessrick looks weakened.<</if>>
+<<if $sigils gte 3>>The sigils in your pack pulse, and something in the flame flinches.<</if>>
+
+<<link "Fight the Ash-Priest!">><<run setup.startFight($bossDef)>><<goto "Combat">><</link>>
+
+:: RiftEnd
+<<if $vaultPeace>>
+The Ember Idol cools, cracks, and crumbles into ordinary soot. Across the Rift, the glowing caves dim, the chanting stops, and the monsters slink back into the hills, unbound.
+<<else>>
+Kessrick collapses beside the Ember Idol. The black flame gutters and dies, and the idol crumbles into ordinary soot. Across the Rift, the glowing caves dim, the chanting stops, and the monsters slink back into the hills, unbound.
+<</if>>
+
+You return to Thornwatch Keep as dawn breaks. Warden-Captain Isolde Marrow meets you at the gate and lets out a long breath.
+
+"The wards are quiet. The patrols are already riding out." She counts out a heavy purse.
+<<set $gold += 100>>
+You gain 100 crowns.
+
+The keep's guards raise their spears in salute as you pass. The Weeping Rift is only a ravine again, and <<= $name>> is the name they will tell around the fires.
+
+<<for _be range setup.banterAll("end")>><p><i><<= _be>></i></p><</for>>
+<h2>The End</h2>
+<p><em><<= $name>>, <<= $race>> <<= $class>>, Rank <<= $rank>>. Stamina <<= $hp>>/<<= $maxhp>>, <<= $gold>> crowns.</em></p>
+
+<<link "Play again">><<run Engine.restart()>><</link>>
+
+
+:: DeepIntro
+Orrow's Rest is a hillside village of slate roofs and shuttered windows. For three generations its silver mine, Orrow's Deep, kept every lamp in the valley burning. Three weeks ago, the mine's lamps went out.
+
+Mine-Warden Ilse Varn meets you at the winch house, a soot-stained woman gripping a lantern she never sets down. "The night crew stopped answering the signal-bells. The two who crawled out couldn't say what they saw. They just kept asking whether I'd blown out the lamps."
+
+She glances at the black mouth of the shaft. "Light is life down there. Every step costs it. Find out what's wrong, and seal it if you can."
+
+<<run setup.startDeep()>>
+
+[[Prepare at the mine-head|DeepSurface]]
+
+:: DeepSurface
+<<set $crawling to false>>
+Orrow's Rest crouches around the mine-head: a winch house, a bunkhouse, a dozen shuttered cottages. Warden Varn watches from the doorway.
+
+<b>Down there, four things matter:</b>
+* <b>Light.</b> Every step into the Deep burns 1 Light (nightsight stretches it). At 0, the dark feeds your Dread.
+* <b>Dread</b>, from 0 to 10. At 3 you are Shaken (-1 die on everything), at 6 Haunted (-2 dice), and at 10 you break and flee.
+* <b>Provisions.</b> You need 1 to make camp. Camping restores Stamina, Sparks and eases Dread, but it stirs the Deep.
+* <b>The Stirring.</b> Every step and every rest stirs the Deep. When it fills, something hunts you.
+
+You have <<= $gold>> crowns. Light <<= $light>>/12, oil flasks <<= $flasks>> (each refills 6 Light), Provisions <<= $prov>>, holy salt <<= $salt>> (each scatters 2 Dread), healing draughts <<= $potions>>.
+
+<div class="actions">
+<<if $gold gte 3>><<link "Oil flask (3 crowns)">><<set $gold -= 3>><<set $flasks++>><<goto "DeepSurface">><</link>><<else>><span class="dim">Oil flask: 3 crowns</span><</if>>
+<<if $gold gte 2>><<link "Provisions (2 crowns)">><<set $gold -= 2>><<set $prov++>><<goto "DeepSurface">><</link>><<else>><span class="dim">Provisions: 2 crowns</span><</if>>
+<<set _sp to ($saltDeal ? 3 : 5)>><<if $gold gte _sp>><<link `"Holy salt (" + _sp + " crowns)"`>><<set $gold -= _sp>><<set $salt++>><<goto "DeepSurface">><</link>><<else>><span class="dim">Holy salt: <<= _sp>> crowns</span><</if>>
+<<if $gold gte 8>><<link "Healing draught (8 crowns)">><<set $gold -= 8>><<set $potions++>><<goto "DeepSurface">><</link>><<else>><span class="dim">Healing draught: 8 crowns</span><</if>>
+<<if $flasks gt 0 and $light lt 12>><<link "Refill your lantern (+6 Light)">><<run setup.useFlask()>><<goto "DeepSurface">><</link>><</if>>
+<<if $gold gte 3>><<link "Rest in the bunkhouse (3 crowns)">><<set $gold -= 3>><<run setup.rest()>><<run setup.easeDread(3)>><<goto "DeepSurface">><</link>><<else>><span class="dim">Bunkhouse bed: 3 crowns</span><</if>>
+</div>
+
+<<link "Descend into the Adit">><<set $checkpoint to "DeepAdit">><<goto "DeepAdit">><</link>>
+<<talklink "varn" "Talk with Warden Varn">>
+<<talklink "dorrin" "Talk with old Dorrin">>
+<<recruitlink "deep">>
+<<partylink>>
+
+:: DeepAdit
+<<set $crawling to true>><<set $depth to 1>>
+The Adit is the mouth of the Deep: a timbered tunnel sloping into darkness, lantern hooks along both walls, every one empty. The air tastes of cold metal and old breath. A signal-bell hangs by the entrance, its clapper wrapped in cloth.
+
+<div class="actions">
+<<camplink>>
+<<link "Climb back to Orrow's Rest">><<goto "DeepSurface">><</link>>
+<<move "DeepCarts" "Follow the cart rails (Cart Tunnel)">>
+<<move "DeepBunk" "Take the side passage (Bunkhouse)">>
+<<packlink>>
+</div>
+
+:: DeepCarts
+<<set $depth to 1>>
+Rusted ore carts stand abandoned on the rails, their loads long since spilled. A faint murmur drifts down the tunnel, too soft to make out, like many voices speaking in the next room.
+
+<div class="actions">
+<<if not $seen.carts>><<link "Search the carts">><<goto "DeepCartsSearch">><</link>><<else>><span class="dim">You have searched the carts.</span><</if>>
+<<if not $seen.whisper>><<link "Listen to the murmuring">><<goto "DeepCartsListen">><</link>><<else>><span class="dim">The murmuring goes on.</span><</if>>
+<<move "DeepAdit" "Back to the Adit">>
+<<move "DeepShaft" "Go on to the collapsed shaft">>
+<<packlink>>
+</div>
+
+:: DeepCartsSearch
+<<set $seen.carts to true>>
+<<chk "wit" "Perception" 2>>
+<<if _ok>>
+Under a rotted tarp you find a miner's tin of hard biscuit, sealed and untouched. <b>+1 Provision.</b>
+<<set $prov++>>
+<<else>>
+You lift the tarp, and a pale hand closes on your wrist. It is gone when you look again, but you can still feel the cold.
+<<scare 2 1>>
+<</if>>
+
+[[Back|DeepCarts]]
+
+:: DeepCartsListen
+<<set $seen.whisper to true>>
+<<chk "wit" "Discernment" 2>>
+<<if _ok>>
+You hold your breath and sort the murmur into words. The same phrase, over and over: "Orrow Venn put out the lamps. Orrow Venn put out the lamps." A name, and maybe an order.
+<<set $knowsName to true>>
+<<else>>
+The words slide through your ears like water. You catch only one, "dark," repeated until you feel your pulse in it.
+<<run setup.gainDread(1)>>
+<b>+1 Dread.</b>
+<</if>>
+
+[[Back|DeepCarts]]
+
+:: DeepBunk
+<<set $depth to 1>>
+Rows of double bunks fill a long room. On every blanket lies a thin gray shape of dust in the outline of a sleeping person. Dozens of them, all facing the door.
+
+<div class="actions">
+<<if not $seen.bunk>><<link "Step among the bunks">><<goto "DeepBunkLook">><</link>><<else>><span class="dim">You have searched the bunks.</span><</if>>
+<<camplink>>
+<<move "DeepAdit" "Back to the Adit">>
+<<move "DeepShaft" "Follow the drainage cut to the collapsed shaft">>
+<<packlink>>
+</div>
+
+:: DeepBunkLook
+<<set $seen.bunk to true>>
+As you step between the bunks, the dust shapes turn their heads to follow you. Nothing else moves.
+<<scare 2 1>>
+Whatever they were, they no longer need what lies beside them: a flask of lantern oil and a tin of provisions.
+<<set $flasks++>><<set $prov++>>
+<b>+1 oil flask, +1 Provision.</b>
+
+[[Back|DeepBunk]]
+
+:: DeepShaft
+<<set $depth to 1>>
+The tunnel ends in a rockfall that has half-sealed the way down. Beyond it, a crooked stair spirals into the dark.
+
+<div class="actions">
+<<if not $seen.shaft>>
+How will you get through?
+<<link "Clamber over the rubble (Acrobatics)">><<set $deepMethod to "Acrobatics">><<goto "DeepShaftCross">><</link>>
+<<link "Heave the stones aside (Athletics)">><<set $deepMethod to "Athletics">><<goto "DeepShaftCross">><</link>>
+<<link "Hew a path with pick and patience (costs 2 Light)">><<set $deepMethod to "Hew">><<goto "DeepShaftCross">><</link>>
+<<else>>
+<span class="dim">You have made the way passable.</span>
+<<move "DeepLanding" "Descend the winding stair (Lower Landing)">>
+<</if>>
+<<move "DeepCarts" "Back to the Cart Tunnel">>
+<<move "DeepBunk" "Back to the Bunkhouse">>
+<<packlink>>
+</div>
+
+:: DeepShaftCross
+<<set $seen.shaft to true>>
+<<if $deepMethod is "Acrobatics">>
+<<chk "fin" "Acrobatics" 2>>
+<<if _ok>>
+You scramble over the shifting stones and drop to the far side without a sound.
+<<else>>
+The stones shift under your feet. You slide, scrape, and land hard, and a little lantern oil spills into the dark.
+<<run setup.hurt(random(2, 4))>><<run setup.burn(1)>>
+<b>You lose some Stamina and 1 Light.</b>
+<</if>>
+<<elseif $deepMethod is "Athletics">>
+<<chk "vig" "Athletics" 3>>
+<<if _ok>>
+You heave the boulders aside one by one and open a gap wide enough for a person.
+<<else>>
+A boulder slips and thunders down the shaft. The echo runs on for a long time.
+<<set $stir += 2>>
+<b>The Deep stirs.</b>
+<</if>>
+<<else>>
+You spend long minutes hewing a gap, your lantern burning down beside you.
+<<run setup.burn(2)>>
+<b>-2 Light.</b>
+<</if>>
+
+[[Onward|DeepShaft]]
+
+:: DeepLanding
+<<set $depth to 2>>
+The stair ends at the Lower Landing: a rail junction where three tunnels meet. Water drips somewhere far off. The air is colder here, and the dark seems denser, as if your lantern were pushing against it.
+
+<div class="actions">
+<<move "DeepFlood" "Take the drowned tunnel (Flooded Gallery)">>
+<<move "DeepAssay" "Take the lit-once tunnel (Assay Office)">>
+<<move "DeepChapel" "Take the arched tunnel (Chapel of Lamps)">>
+<<move "DeepShaft" "Climb back to the shaft">>
+<<packlink>>
+</div>
+
+:: DeepFlood
+<<set $depth to 2>>
+A long gallery drowned to the knee in black water. Something long and pale ripples just beneath the surface, keeping pace with your lantern.
+
+<div class="actions">
+<<if not $seen.flood>>
+<<link "Wade straight through (Athletics)">><<set $deepMethod to "Wade">><<goto "DeepFloodResolve">><</link>>
+<<link "Creep along the ledge (Stealth)">><<set $deepMethod to "Ledge">><<goto "DeepFloodResolve">><</link>>
+<<if $flasks gt 0>><<link "Throw a burning oil flask to draw it off (costs 1 flask)">><<set $deepMethod to "Flask">><<goto "DeepFloodResolve">><</link>><</if>>
+<<else>>
+<span class="dim">The water is still now.</span>
+<<move "DeepEcho" "Go on to the Echo Hall">>
+<</if>>
+<<move "DeepLanding" "Back to the Landing">>
+<<packlink>>
+</div>
+
+:: DeepFloodResolve
+<<set $seen.flood to true>>
+<<if $deepMethod is "Wade">>
+<<chk "vig" "Athletics" 2>>
+<<elseif $deepMethod is "Ledge">>
+<<chk "fin" "Stealth" 2>>
+<<else>>
+<<set $flasks-->>
+<<set _ok to true>>
+You hurl a flask of burning oil far down the gallery. The water boils away from the flames, and the pale shape tears after them.
+<b>-1 oil flask.</b>
+<</if>>
+
+<<if _ok>>
+You reach the far end unmolested.
+<<if $deepMethod isnot "Flask">>Something glints in the shallows: a sealed flask of lantern oil, dropped by an earlier crew. <<set $flasks++>><b>+1 oil flask.</b><</if>>
+
+[[Onward|DeepFlood]]
+<<else>>
+The water erupts. A Silt-stalker, long as a boat and pale as a drowned thing, surges up with too many jointed fingers.
+
+<<link "Fight!">><<run setup.startFight({name:"Silt-stalker", hp:14, guard:1, pool:5, dmg:2, loot:0, win:"DeepFlood"})>><<goto "Combat">><</link>>
+<</if>>
+
+:: DeepAssay
+<<set $depth to 2>>
+An assayer's office: ledgers, scales, a leaning shelf of ore samples. A single strongbox is bolted to the floor. On the desk lies an open journal, its last pages torn.
+
+<div class="actions">
+<<if not $journal>><<link "Read the journal">><<goto "DeepAssayRead">><</link>><<else>><span class="dim">You have read the journal.</span><</if>>
+<<if not $chalk>>
+<<link "Pick the strongbox lock (Pilfering)">><<set $deepMethod to "Pilfering">><<goto "DeepAssayBox">><</link>>
+<<link "Force the strongbox (Athletics)">><<set $deepMethod to "Force">><<goto "DeepAssayBox">><</link>>
+<<else>>
+<span class="dim">The strongbox is open.</span>
+<</if>>
+<<move "DeepLanding" "Back to the Landing">>
+<<move "DeepChapel" "Go through to the Chapel of Lamps">>
+<<packlink>>
+</div>
+
+:: DeepAssayRead
+<<set $stir += 1>>
+<<chk "wit" "Investigation" 2>>
+<<if _ok>>
+<<set $journal to true>>
+The foreman's cramped hand fills the surviving pages: <i>"It is not a beast. It is an absence, and it eats light. The old wardens sealed it in the Heart Vault with chalk of ground bone-silver and a rite of flame: four measures of light burned as a closing, and a name spoken to bind it. The chalk is in the strongbox. Whatever you do, do not let the lamps go out."</i>
+
+The rite needs the chalk and 4 Light to burn.
+<<else>>
+Half the pages are stained and unreadable. You lose time, and the dust stirs, trying.
+
+[[Try again|DeepAssayRead]]
+<</if>>
+
+[[Back|DeepAssay]]
+
+:: DeepAssayBox
+<<if $deepMethod is "Pilfering">>
+<<chk "fin" "Pilfering" 2>>
+<<else>>
+<<chk "vig" "Athletics" 3>>
+<</if>>
+<<if _ok>>
+<<set $chalk to true>>
+Inside lies a leather pouch of pale, gritty chalk that gleams faintly in the lantern light. <b>You take the sealing chalk.</b>
+<<else>>
+The box resists, and something inside it clangs like a bell. The sound rolls down the tunnels.
+<<set $stir += 2>>
+<b>The Deep stirs.</b>
+
+[[Try again|DeepAssayBox]]
+<</if>>
+
+[[Back|DeepAssay]]
+
+:: DeepChapel
+<<set $depth to 2>>
+A small stone chapel, and everywhere in its walls are niches holding lamps: hundreds of them, all dark, all cold. But there is a memory of warmth here, and the darkness keeps its distance from the altar.
+
+<div class="actions">
+<<if not $seen.tam>><<link "Speak to the huddled figure behind the altar">><<goto "DeepChapelTam">><</link>><<else>><span class="dim">Tam Orrick sits by the altar, watching the door.</span><</if>>
+<<if not $seen.votive>><<link "Light the last dry votive lamp">><<set $seen.votive to true>><<set $light to Math.min(12, $light + 2)>><<goto "DeepChapel">><</link>><<else>><span class="dim">You have lit the votive.</span><</if>>
+<<camplink>>
+<<move "DeepLanding" "Back to the Landing">>
+<<move "DeepAssay" "Go through to the Assay Office">>
+<<packlink>>
+</div>
+
+<<if $seen.votive>>The votive burns steadily, and its flame is warm. <b>+2 Light.</b><</if>>
+
+Camping here is safer: it stirs the Deep less and eases Dread more.
+<<if $seen.tam>>
+<<talklink "tam" "Talk with Tam">>
+<<if $party.indexOf("tam") lt 0>><<joinlink "tam" "Ask Tam to come along" "DeepChapel">><<else>><span class="dim">Tam is with you.</span><</if>>
+<</if>>
+<<partylink>>
+
+:: DeepChapelTam
+Behind the altar crouches a thin young hauler, his lantern long dead, his eyes fixed on nothing. He flinches when your light touches him.
+
+"Are you real?" he whispers. "Don't speak to it. It uses your voice."
+
+<<link "Coax him out gently (Persuasion)">><<set $deepMethod to "Persuasion">><<goto "DeepChapelTamResolve">><</link>>
+<<link "Tend his wounds (Medicine)">><<set $deepMethod to "Medicine">><<goto "DeepChapelTamResolve">><</link>>
+[[Leave him be|DeepChapel]]
+
+:: DeepChapelTamResolve
+<<if $deepMethod is "Persuasion">>
+<<chk "pre" "Persuasion" 2>>
+<<else>>
+<<chk "wit" "Medicine" 2>>
+<</if>>
+<<if _ok>>
+<<set $seen.tam to true>><<set $survivor to true>><<set $prov += 2>>
+He lets out a shaking breath. "Tam. Tam Orrick. I've been living on candle-tallow." He presses his last two biscuit tins into your hands and grips your sleeve. "I'll stay here. But if you go down, hum when you're scared. It helps. It kept me from listening."
+<b>+2 Provisions.</b> Tam's steadiness helps you keep your nerve: <b>+1 die on Resolve checks.</b>
+<<else>>
+He shies away and gasps, and the sound echoes down the tunnels.
+<<set $stir += 2>>
+<b>The Deep stirs.</b>
+
+[[Try again|DeepChapelTam]]
+<</if>>
+
+[[Back|DeepChapel]]
+
+:: DeepEcho
+<<set $depth to 2>>
+A vaulted hall of smooth stone that carries every sound. Your footsteps reach you a moment before you make them. Somewhere ahead, a voice says your name, and it is your own voice.
+
+<div class="actions">
+<<if not $seen.echo>>
+<<link "Answer the voice (Resolve)">><<set $deepMethod to "Answer">><<goto "DeepEchoResolve">><</link>>
+<<link "Stop your ears and run (Athletics)">><<set $deepMethod to "Run">><<goto "DeepEchoResolve">><</link>>
+<<link "Sing back to it (Performance)">><<set $deepMethod to "Sing">><<goto "DeepEchoResolve">><</link>>
+<<else>>
+<span class="dim">The hall is quiet, for now.</span>
+<<move "DeepGate" "Go on to the Lampless Gate">>
+<</if>>
+<<move "DeepFlood" "Back through the Flooded Gallery">>
+<<packlink>>
+</div>
+
+:: DeepEchoResolve
+<<set $seen.echo to true>>
+<<if $deepMethod is "Answer">>
+<<chk "pre" "Resolve" 3>>
+<<if _ok>>
+You answer, and the voice answers you. It speaks from inside your own certainty, and for a while you speak to yourself. When it falls quiet, it has left one true thing behind: <i>"Orrow Venn is what binds it."</i>
+<<set $knowsName to true>>
+<<else>>
+The voice tells you things about yourself that you did not know you believed. You are still shaking when it stops.
+<<run setup.gainDread(2)>>
+<b>+2 Dread.</b>
+<</if>>
+<<elseif $deepMethod is "Run">>
+<<chk "vig" "Athletics" 2>>
+<<if _ok>>
+You clamp your hands over your ears and sprint the length of the hall. The voice screams behind you, and you do not stop until it is gone.
+<<else>>
+You cannot run fast enough. The voice climbs inside your head and follows you the whole way.
+<<run setup.gainDread(1)>>
+<b>+1 Dread.</b>
+<</if>>
+<<else>>
+<<chk "pre" "Performance" 2>>
+<<if _ok>>
+You sing, badly, but with conviction. The voice hesitates, then falls silent, and in an alcove where its echo was strongest you find a miner's silver cache. <b>+20 crowns.</b>
+<<set $gold += 20>>
+<<else>>
+Your song comes out thin. The voice sings it back to you, wrong, in a chorus of voices you do not want to identify.
+<<run setup.gainDread(1)>>
+<b>+1 Dread.</b>
+<</if>>
+<</if>>
+<<if $dread gte 10>><<goto "DeepBroken">><</if>>
+
+[[Onward|DeepEcho]]
+
+:: DeepGate
+<<set $depth to 3>>
+The Lampless Gate: a wall of black iron doors hung with a thousand lanterns, each on its own chain, all cold. The floor is wet with something that is not water. Your lantern gutters as if breathing out. From the gaps between the lanterns, a wick of smoke rises and takes the shape of a miner.
+
+<div class="actions">
+<<if not $seen.gate>>
+<<link "Slip past it in the dark (Stealth)">><<set $deepMethod to "Sneak">><<goto "DeepGateResolve">><</link>>
+<<set _oc to ($gateHint ? 2 : 3)>><<if $light gte _oc>><<link `"Offer it light (burn " + _oc + " Light)"`>><<set $deepMethod to "Offer">><<goto "DeepGateResolve">><</link>><</if>>
+<<link "Fight the Wick-Wraith">><<set $deepMethod to "Fight">><<goto "DeepGateResolve">><</link>>
+<<else>>
+<span class="dim">The iron doors stand open.</span>
+<<move "DeepHeart" "Enter the Heart Vault">>
+<</if>>
+<<move "DeepEcho" "Back to the Echo Hall">>
+<<packlink>>
+</div>
+
+The Deep is too close here to make camp.
+
+:: DeepGateResolve
+<<if $deepMethod is "Sneak">>
+<<chk "fin" "Stealth" 3>>
+<<if _ok>>
+<<set $seen.gate to true>>
+You slip along the wall, keeping your lantern shuttered, until the wraith turns away and forgets you.
+
+[[Onward|DeepGate]]
+<<else>>
+The wraith turns. The hanging lanterns tremble.
+
+<<set $seen.gate to true>>
+<<link "Fight!">><<run setup.startFight({name:"Wick-Wraith", hp:18, guard:2, pool:5, dmg:3, loot:0, win:"DeepGate"})>><<goto "Combat">><</link>>
+<</if>>
+<<elseif $deepMethod is "Offer">>
+<<set $seen.gate to true>>
+<<set _oc to ($gateHint ? 2 : 3)>><<run setup.burn(_oc)>>
+You lift your lantern and let the flame burn high. The wraith reaches for it, then recoils, howling, and unravels like a burning thread. <b>-<<= _oc>> Light.</b>
+
+[[Onward|DeepGate]]
+<<else>>
+<<set $seen.gate to true>>
+The Wick-Wraith drifts toward you, trailing smoke.
+
+<<link "Fight!">><<run setup.startFight({name:"Wick-Wraith", hp:18, guard:2, pool:5, dmg:3, loot:0, win:"DeepGate"})>><<goto "Combat">><</link>>
+<</if>>
+
+:: DeepHeart
+<<set $depth to 3>>
+The Heart Vault is a round chamber where the mine's first silver vein once surfaced. The vein is gone. Where it ran, there is a stillness the shape of a man, tall as the vault, made of everything the lamps ever lost. Your lantern shrinks to a bead. All around the walls hang small pale lights on chains: one for every miner who did not come home.
+
+The Lampless One does not move. It does not need to.
+
+<<if $knowsName>>You know its binding name.<</if>>
+
+<div class="actions">
+<<if $journal and $chalk and $light gte 4>>
+<<link "Draw the seal and speak the closing (Religion)">><<set $deepMethod to "Religion">><<goto "DeepHeartSeal">><</link>>
+<<link "Weave the seal with the chalk (Occult)">><<set $deepMethod to "Occult">><<goto "DeepHeartSeal">><</link>>
+<<elseif $journal and $chalk>>
+<span class="dim">You know the rite, but you have less than 4 Light to burn for it.</span>
+<</if>>
+<<link "Improvise a ward against it (Occult, very hard)">><<goto "DeepHeartWard">><</link>>
+<<link "Attack the Lampless One">><<goto "DeepHeartFight">><</link>>
+<<link "Grab a slab of raw silver and run (Stealth or Athletics)">><<goto "DeepHeartRun">><</link>>
+<<packlink>>
+</div>
+
+:: DeepHeartSeal
+<<run setup.burn(4)>>
+<<set _need to $knowsName ? 2 : 3>>
+You spill the chalk in a ring, set your lantern's flame to it, and begin. <b>-4 Light.</b>
+<<if $deepMethod is "Religion">>
+<<chk "pre" "Religion" _need>>
+<<else>>
+<<chk "wit" "Occult" _need>>
+<</if>>
+<<if _ok>>
+The chalk ring flares. The Lampless One shudders and folds toward the ring, and the whole vault rings like a struck bell.
+
+[[Close the seal|DeepEndSeal]]
+<<else>>
+The ring gutters and the seal cracks. The Lampless One turns toward you. The little lights on the walls go out, one by one.
+<<run setup.gainDread(2)>><<run setup.hurt(4)>>
+<b>+2 Dread. You lose some Stamina.</b>
+<<if $dread gte 10>><<goto "DeepBroken">><</if>>
+
+<<link "Fight!">><<goto "DeepHeartFight">><</link>>
+<</if>>
+
+:: DeepHeartWard
+<<chk "wit" "Occult" 4>>
+<<if _ok>>
+You scrawl a ward in soot on the floor and speak the only binding words you can think of. It shouldn't work. It does.
+
+[[Close the ward|DeepEndSeal]]
+<<else>>
+The ward fizzles. The Lampless One leans toward you.
+
+<<link "Fight!">><<goto "DeepHeartFight">><</link>>
+<</if>>
+
+:: DeepHeartFight
+The more light you carry, the weaker it is.
+<<set $foe to {name:"The Lampless One", hp:30, guard:2, pool:6, dmg:3, loot:0, win:"DeepEndDestroy"}>>
+<<if $light lte 0>><<set $foe.pool to 7>>Your lantern is dead, and the Lampless One is stronger for it.<<elseif $light gte 4>><<set $foe.pool to 5>>Your lantern burns bright, and the Lampless One flinches from it.<</if>>
+
+<<link "Stand and fight!">><<run setup.gainDread(1)>><<run setup.startFight($foe)>><<goto "Combat">><</link>>
+
+:: DeepHeartRun
+The vault's walls are lined with raw silver, more than a village could spend in a lifetime. The Lampless One does not stir. It is waiting to see what you will do.
+
+<<link "Slip out with a slab (Stealth)">><<set $deepMethod to "Stealth">><<goto "DeepHeartRunResolve">><</link>>
+<<link "Grab what you can and bolt (Athletics)">><<set $deepMethod to "Athletics">><<goto "DeepHeartRunResolve">><</link>>
+
+:: DeepHeartRunResolve
+<<if $deepMethod is "Stealth">>
+<<chk "fin" "Stealth" 3>>
+<<else>>
+<<chk "vig" "Athletics" 3>>
+<</if>>
+<<if _ok>>
+You are through the iron doors before the Lampless One turns its head.
+
+[[Run for the surface|DeepEndGreed]]
+<<else>>
+Silver clatters, and the little lights go out.
+
+<<set $foe to {name:"The Lampless One", hp:30, guard:2, pool:7, dmg:3, loot:0, win:"DeepEndDestroy"}>>
+<<link "Fight!">><<run setup.gainDread(1)>><<run setup.startFight($foe)>><<goto "Combat">><</link>>
+<</if>>
+
+:: DeepEndSeal
+The chalk ring blazes white, and the Lampless One folds inward like a page turning. In the silence after, the pale lights on the walls flare, one by one, and drift loose from their chains. They gather around you, warm and glad, and lead the way up.
+
+At the mine-head, Warden Varn is already at the winch. Behind you, the shaft's lanterns are lighting themselves, row by row.
+<<set $gold += 60>>
+She counts out 60 crowns. "The Deep is quiet. You've given us back our light."
+
+<<for _be range setup.banterAll("end")>><p><i><<= _be>></i></p><</for>>
+<h2>The End</h2>
+<p><em><<= $name>>, <<= $race>> <<= $class>>. <<= $moves>> steps taken. Dread <<= $dread>>/10, Light <<= $light>>, <<= $gold>> crowns.</em></p>
+
+<<link "Play again">><<run Engine.restart()>><</link>>
+
+:: DeepEndDestroy
+The Lampless One tears apart in a rush of dark that pours out of the vault and up the shaft like a thousand bats. Then it is gone, and the little lights on the walls rise off their chains and go dim, one by one, at last at rest.
+
+You climb out of the Deep on a single lantern flame, blinking in the dawn. Warden Varn is at the winch.
+<<set $gold += 60>>
+"It's gone. Whatever you did down there, it's gone." She presses 60 crowns into your hand and does not ask how you did it.
+
+<<for _be range setup.banterAll("end")>><p><i><<= _be>></i></p><</for>>
+<h2>The End</h2>
+<p><em><<= $name>>, <<= $race>> <<= $class>>. <<= $moves>> steps taken. Dread <<= $dread>>/10, Light <<= $light>>, <<= $gold>> crowns.</em></p>
+
+<<link "Play again">><<run Engine.restart()>><</link>>
+
+:: DeepEndGreed
+You reach the surface with a slab of raw silver on your shoulder and the dark at your back. It does not follow you out. It does not need to.
+
+<<set $gold += 80>>
+The silver sells for 80 crowns in the next town. The Deep stays sealed only by distance. Some nights, in your dreams, the lamps go out one by one.
+
+<<for _be range setup.banterAll("end")>><p><i><<= _be>></i></p><</for>>
+<h2>The End</h2>
+<p><em><<= $name>>, <<= $race>> <<= $class>>. <<= $moves>> steps taken. Dread <<= $dread>>/10, Light <<= $light>>, <<= $gold>> crowns.</em></p>
+
+<<link "Play again">><<run Engine.restart()>><</link>>
+
+:: DeepPack
+<h2>Your pack</h2>
+Light <<= $light>>/12 &middot; Oil flasks <<= $flasks>> &middot; Provisions <<= $prov>> &middot; Holy salt <<= $salt>> &middot; Draughts <<= $potions>>
+
+Dread <<= $dread>>/10: <<if $dread gte 6>>Haunted (-2 dice on everything)<<elseif $dread gte 3>>Shaken (-1 die on everything)<<else>>Steady<</if>>
+
+<<if $journal>>You know the closing rite needs the chalk and 4 Light.<</if>>
+
+<div class="actions">
+<<if $flasks gt 0 and $light lt 12>><<link "Refill lantern (+6 Light)">><<run setup.useFlask()>><<goto "DeepPack">><</link>><</if>>
+<<if $salt gt 0 and $dread gt 0>><<link "Scatter holy salt (-2 Dread)">><<run setup.useSalt()>><<goto "DeepPack">><</link>><</if>>
+<<if $potions gt 0 and $hp lt $maxhp>><<link "Drink a healing draught">><<run setup.useDraught()>><<goto "DeepPack">><</link>><</if>>
+</div>
+
+<<link "Close your pack">><<goto $packFrom>><</link>>
+<<partylink>>
+
+:: DeepCamp
+<<set $checkpoint to $campAt>>
+<<if $campAt is "DeepChapel">>
+You settle among the cold lamps. For a little while, the dark keeps its distance.
+<<else>>
+You wedge a bedroll against the wall, keep the lantern low, and try not to listen. Sleep comes in pieces.
+<</if>>
+
+You recover Stamina and Sparks, and some Dread lifts. <b>-<<= $lastCampCost>> Provision<<= $lastCampCost > 1 ? "s" : "">>.</b> The Deep stirs.
+
+<<link "Break camp">><<goto $campAt>><</link>>
+<<if $party.length>><<partylink>> (companions can talk once per rest)<</if>>
+
+:: DeepHunt
+<<set $hunt to false>>
+<<run setup.gainDread(1)>>
+<<if $dread gte 10>>
+<<goto "DeepBroken">>
+<<else>>
+The Deep has noticed you. The lantern flame bows away from something you cannot see, and the temperature drops. <b>+1 Dread.</b>
+<<if $depth is 1>>
+<<set $foe to {name:"Skulking Dark", hp:10, guard:1, pool:4, dmg:2, loot:0, win:$huntDest}>>
+A shape made of shadow peels itself off the wall.
+<<elseif $depth is 2>>
+<<set $foe to {name:"Hollow Miner", hp:14, guard:1, pool:5, dmg:2, loot:0, win:$huntDest}>>
+A figure in a miner's coat steps into the light. There is nothing under its hat.
+<<else>>
+<<set $foe to {name:"Lampless Thing", hp:18, guard:2, pool:5, dmg:3, loot:0, win:$huntDest}>>
+A tall shape unfolds from the dark, and the light in your lantern trembles toward it.
+<</if>>
+
+<<link "Stand and fight!">><<run setup.startFight($foe)>><<goto "Combat">><</link>>
+<</if>>
+
+:: DeepBroken
+<<set $crawling to false>><<set $dread to 6>><<set $hunt to false>><<set $stir to 0>><<set $nextHunt to 6>>
+<<run setup.breakParty()>><<set $prov to Math.max(0, $prov - 1)>><<set $checkpoint to "DeepAdit">>
+Your nerve goes. You do not remember the climb. You remember the dark on your heels, and the crawl through the Adit's mouth into the dawn, and Warden Varn's hands on your shoulders as she drags you clear.
+
+Whatever you did not finish is still down there. Your progress is not lost, but a bit of your supplies and your sleep are.
+
+<b>-1 Provision. Dread settles at 6.</b>
+<<if $leftNames.length>><p><i><<= $leftNames.join(" and ")>> could not take it, and left in the night.</i></p><</if>>
+
+<<link "Recover at the mine-head">><<goto "DeepSurface">><</link>>
+
+
+:: Talk
+<<set _n to setup.npcs[$talkNpc]>>
+<h2><<= _n.name>></h2>
+<em><<= _n.title>></em>
+
+<<= _n.greet>>
+
+<<for _t range _n.topics>>
+<<if not _t.req or _t.req()>>
+<<capture _t>>
+<<link `_t.label`>><<run setup.talkTopic($talkNpc, _t.id)>><<goto "TalkTopic">><</link>>
+<</capture>>
+<br>
+<</if>>
+<</for>>
+
+<<link "Finish talking">><<goto $talkBack>><</link>>
+
+:: TalkTopic
+<<set _n to setup.npcs[$talkNpc]>>
+<b><<= _n.name>></b>
+<<for _p range $topicText>><p><<= _p>></p><</for>>
+<<if $topicNote>><div class="check pass"><<= $topicNote>></div><</if>>
+
+<<link "Ask something else">><<goto "Talk">><</link>>
+<<link "Finish talking">><<goto $talkBack>><</link>>
+
+:: Recruit
+<h2>The wanderers' table</h2>
+<<if $recruitHub is "bell">>
+In a corner of the Gilded Heron, a few travelers sit apart from the drinkers, eating slowly, watching the room. They look like people who have been on the road a long time and are ready for a reason to stay on it.
+<<elseif $recruitHub is "rift">>
+Along the back wall of the Broken Shield, a handful of hard-eyed sellswords and wanderers nurse cheap drinks. They have the look of people who follow the coin, or the story.
+<<else>>
+On the bunkhouse steps at Orrow's Rest, a few travelers wait out the last of the daylight, not quite ready to go down the shaft and not quite willing to leave.
+<</if>>
+
+Your party: <<= $party.length>>/2 companions. You have <<= $gold>> crowns.
+
+<<for _id range setup.hubRoster[$recruitHub]>>
+<<if $party.indexOf(_id) lt 0>>
+<<capture _id>>
+<div class="opt"><b><<= setup.companions[_id].name>></b>, <<= setup.companions[_id].title>><br><small><<= setup.companions[_id].role>>: <<= setup.companions[_id].roleText>> Trained: <<= setup.companions[_id].skills.join(", ")>>. Fee: <<= setup.companions[_id].fee>> crowns.</small><br><i><<= setup.companions[_id].pitch[0]>></i><br>
+<<if $party.length lt 2 and $gold gte setup.companions[_id].fee>><<link `"Hire " + setup.companions[_id].short + " (" + setup.companions[_id].fee + " crowns)"`>><<run setup.recruit(_id)>><<goto "Recruit">><</link>><<else>><span class="dim">You cannot hire <<= setup.companions[_id].short>> right now (party full or not enough crowns).</span><</if>></div>
+<</capture>>
+<</if>>
+<</for>>
+
+<<link "Leave the table">><<goto $recruitBack>><</link>>
+
+:: Party
+<h2>Your party</h2>
+<<= $name>>, <<= $race>> <<= $class>> (you).
+
+<<if $party.length is 0>>You travel alone. There are people who might travel with you, if you find them.<</if>>
+<<for _id range $party>>
+<<capture _id>>
+<div class="opt"><b><<= setup.companions[_id].name>></b>, <<= setup.companions[_id].title>><br>
+<small><<= setup.companions[_id].role>>: <<= setup.cstat(_id).roleText>> Trained: <<= setup.companions[_id].skills.join(", ")>>.</small><br>
+Trust: <<= "♥".repeat($trust[_id] || 0) + "♡".repeat(3 - ($trust[_id] || 0))>><br>
+<<link "Talk">><<run setup.partyTalk(_id)>><<goto "PartyTalk">><</link>>
+<<link "Send away">><<run setup.dismiss(_id)>><<goto "Party">><</link>>
+</div>
+<</capture>>
+<</for>>
+
+<span class="dim">Companions can talk once per rest. Each talk deepens Trust, up to 3. Two companions fit in your party. More companions make foes tougher and camps cost an extra Provision.</span>
+
+<<link "Back">><<goto $partyBack>><</link>>
+
+:: PartyTalk
+<<set _c to setup.companions[$partyTalkId]>>
+<h2><<= _c.name>></h2>
+<<for _p range $partyTalkText>><p><<= _p>></p><</for>>
+<<if $partyTalkNote>><div class="check pass"><<= $partyTalkNote>></div><</if>>
+
+[[Back to your party|Party]]
+
+:: PartyJoin
+<p><<= $joinMsg>></p>
+
+<<link "Continue">><<goto $joinBack>><</link>>
