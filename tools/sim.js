@@ -1,4 +1,4 @@
-var fs=require("fs");eval(fs.readFileSync("/tmp/check2.js","utf8"));
+var fs=require("fs");eval(fs.readFileSync("build/check.js","utf8"));
 var v=State.variables;
 var fights={wolf:{name:"Wolf",hp:11,guard:1,pool:4,dmg:2},veyle:{name:"Veyle",hp:26,guard:2,pool:5,dmg:2},vess:{name:"Vess",hp:20,guard:2,pool:5,dmg:2},kess0:{name:"Kessrick",hp:32,guard:2,pool:6,dmg:3},wraith:{name:"Wraith",hp:18,guard:2,pool:5,dmg:3}};
 function setupChar(cl,party,trust){v.race="Human";v.class=cl;v.bg="Old Soldier";v.extraSkill="Stealth";v.base=Object.assign({},setup.classes[cl].rec);setup.finalize();v.party=party.slice();v.trust={};party.forEach(function(p){v.trust[p]=trust;});v.dread=0;v.potions=1;v.partyBoost=0;}

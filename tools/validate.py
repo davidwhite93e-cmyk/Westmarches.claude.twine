@@ -1,8 +1,8 @@
 #!/usr/bin/env python3
 """Validate silent-bell.twee: links, macro balance, JS syntax, companion/NPC references.
-Usage: python3 validate.py [path-to-twee]"""
+Usage: python3 tools/validate.py [path-to-twee]  (run from the repo root)"""
 import re, sys, subprocess, tempfile, os
-P = sys.argv[1] if len(sys.argv) > 1 else 'silent-bell.twee'
+P = sys.argv[1] if len(sys.argv) > 1 else 'src/silent-bell.twee'
 t = open(P, encoding='utf-8').read()
 errs = []
 names = set(re.findall(r'^:: (.+?)(?: \[[^\]]*\])?$', t, re.M))
